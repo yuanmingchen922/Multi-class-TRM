@@ -1,4 +1,4 @@
-# Autonomous Multiclass TRM
+# Multiclass TRM
 
 A kinetic-theory-based multiclass traffic flow model with strict mass conservation, spatial FVM discretization, and an operator-splitting scheme for resolving extreme ODE stiffness.
 

@@ -1,0 +1,131 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{geometry}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+
+\begin{document}
+
+\title{Autonomous Multiclass TRM: Strict Kinematics, Spatial FVM, and Resolution of Extreme Stiffness}
+\author{Mingchen Yuan}
+\date{}
+\maketitle
+
+\section{Introduction}
+The previous formulations established a solid foundation for mass conservation but lacked dimensional consistency, allowed non-physical state jumps, and struggled with discrete spatial boundary definitions. This document upgrades the framework into a strictly tridiagonal, 3D spatial-lateral Markovian structure. Every transition is driven by dimensionally unified, non-linear physical rules that accurately reflect vehicle kinematics, gas-kinetic collision theories, and a strict mathematical operator-splitting scheme to resolve extreme ODE stiffness.
+
+\section{General State Variables and Effective Occupancy Limits}
+Let the highway be partitioned into $X$ sequential cells indexed by $x\in\{1,2,...,X\}$, each with a physical length $\Delta x$. We introduce a discrete lane index $l\in\{1,2,...,L\}$. Let the index $m$ represent a specific vehicle class ranging from 1 to $M$, and $i$ represent a specific speed category from 1 to $N$, associated with actual physical speed scalar $v_{i}$ $(v_{1}<v_{2}<\dots<v_{N})$.
+
+The universal 3D state variable is $f_{i,x,l}^{(m)}$, representing the absolute density of vehicle class $m$ traveling at speed $v_{i}$ within spatial cell $x$ and lane $l$.
+
+To rigorously capture the heterogeneous spatial footprints of different vehicle typologies, we assign a dimensionless Passenger Car Equivalent (PCE) spatial weight $w^{(m)}$ to each class $m$. The universal physical capacity limit $\rho_{\max}$ is strictly governed by the \textbf{Effective Spatial Occupancy Density}:
+\begin{equation}
+\Omega_{x,l} = \sum_{m=1}^{M}\sum_{i=1}^{N} w^{(m)} f_{i,x,l}^{(m)}
+\end{equation}
+All subsequent congestion evaluations, dynamic transition rates, and asymptotic limits must strictly operate against this effective occupancy $\Omega_{x,l}$ to preserve multidimensional physical consistency and prevent unphysical spatial folding.
+
+\section{Strict Kinematic Transition Rates (0D)}
+To prevent unphysical quantum leaps, vehicles can only transition to adjacent speed categories $(|i-j|\le1)$. To strictly bound the dynamic state space and preserve the conservative Markovian structure, transitions extending beyond the defined velocity spectrum are analytically nullified via Dirichlet boundary conditions: $\lambda_{1\rightarrow 0}^{(m)} \equiv 0$ and $\lambda_{N\rightarrow N+1}^{(m)} \equiv 0$.
+
+\subsection{Sequential Acceleration Rates $(i\rightarrow i+1)$}
+Acceleration incorporates a kinematic decay factor, acknowledging that acceleration capability decreases as current speed $v_{i}$ approaches the maximum physical speed $v_{\max}$. By analytically ensuring the inner spatial gap argument is non-negative, the continuous formulation strictly bounds the exponential operator within $(0, 1]$, eliminating the need for mathematically redundant outer bounding operators:
+\begin{equation}
+\lambda_{i\rightarrow i+1}^{(m)}(\Omega_{x,l})=\alpha_{i}^{(m)}\left(1-\frac{v_{i}}{v_{\max}}\right)^{\eta}\left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x,l})}{R_{c}}\right)\right]
+\end{equation}
+
+\subsection{Correction of the Algebraic Limit: The Singular Asymptotic Barrier $(i\rightarrow i-1)$}
+To mathematically enforce an impenetrable macroscopic limit, we introduce a mathematical singularity acting as a Kinematic Asymptotic Barrier. To ensure physical consistency, the collision frequency must strictly account for the effective spatial cross-section (PCE weight $w^{(n)}$) of the downstream blocking vehicles, integrating over the precise domain of strictly slower vehicles ($k<i$). The deceleration transition is rigorously regularized:
+\begin{equation}
+\lambda_{i\rightarrow i-1}^{(m)}(f_{x,l},\Omega_{x,l})=\underbrace{\left(\omega_{0}^{(m)}+\sum_{n=1}^{M}\sum_{k<i}\beta_{i\rightarrow i-1}^{(m,n)}(v_{i}-v_{k})w^{(n)}f_{k,x,l}^{(n)}\right)}_{\text{Effective Kinetic Collision \& Anticipation}}\cdot\underbrace{\left(\frac{\rho_{\max}}{\max(\epsilon,\rho_{\max}-\Omega_{x,l})}\right)^{\eta^{(m)}}}_{\text{Regularized Singular Barrier } \mathcal{B}(\Omega_{x,l})}
+\end{equation}
+
+\textbf{Mathematical Regularization \& Physical Consistency:} The strict spatial integration of $w^{(n)}$ preserves dimensional homogeneity, ensuring collision probabilities scale proportionally with the physical footprint of the obstruction. The constant $\omega_{0}^{(m)}>0$ resolves the $0\times\infty$ paradox, guaranteeing that mathematically homogeneous high-speed platoons undergo strict momentum thermalization when approaching capacity. Furthermore, $\epsilon\approx10^{-8}$ is an infinitesimally small regularizer engineered to safeguard against floating-point complex-domain evaluations caused by transient discrete time-stepping overshoots.
+
+\section{Spatial Discretization via Finite Volume Method}
+To maintain the non-linear manifold while strictly preventing unphysical negative fluxes (backward driving) driven by discrete numerical transient anomalies, the advection is rigorously bounded by a positivity-preserving operator utilizing a continuous dimensionless Downstream Supply Filter. The mathematically redundant outer bound is removed:
+\begin{equation}
+\Phi_{i,x\rightarrow x+1,l}^{(m)}=v_{i}f_{i,x,l}^{(m)}\cdot\left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x+1,l})}{R_{\text{supply}}}\right)\right]
+\end{equation}
+As the downstream occupancy $\Omega_{x+1,l}$ approaches $\rho_{\max}$, the spatial flux mathematically collapses to absolute zero, organically triggering kinematic shockwaves upstream.
+
+\section{Lateral Dynamics: Strict Lane-Changing Mechanics}
+\subsection{Smoothly Differentiable Lateral Transition Rates}
+Standard discrete models employing a hard $\max(0,\Delta\Omega)$ operator introduce a $C^{1}$ mathematical discontinuity, inducing Jacobian matrix singularities. To strictly preserve the $C^{\infty}$ continuously differentiable manifold, we replace the hard threshold with a thermodynamic Softplus approximation. Let $y=\frac{\Omega_{x,l}-\Omega_{x,l^{\prime}}}{\rho_{\max}}$. The continuous lateral transition rate $\gamma_{l\rightarrow l^{\prime},i}^{(m)}$ is robustly formulated as:
+\begin{equation}
+\gamma_{l\rightarrow l^{\prime},i}^{(m)}(f,\Omega)=\kappa^{(m)}\frac{1}{\omega}\ln[1+\exp(\omega\cdot y)]\cdot\left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x,l^{\prime}})}{R_{\text{gap}}}\right)\right]
+\end{equation}
+When $y\le0$, the transition rate continuously decays into an infinitesimally small trace, mathematically guaranteeing a globally non-singular Jacobian matrix.
+
+\textbf{Topological Boundary Closure:} To strictly prohibit non-physical mass leakage beyond the lateral topological bounds of the road network, Dirichlet-type null boundary conditions must be permanently enforced for the innermost and outermost lanes: $\gamma_{1\rightarrow 0, i}^{(m)} \equiv 0$ and $\gamma_{L\rightarrow L+1, i}^{(m)} \equiv 0$.
+
+\section{The Unified 3D Autonomous System}
+The temporal evolution for vehicles of class $m$, in speed category $i$, spatial cell $x$, and lane $l$ is governed by three independent, strictly balanced physical systems:
+\begin{equation}
+\begin{aligned}
+\frac{d}{dt}f_{i,x,l}^{(m)} &= \underbrace{\frac{1}{\Delta x}(\Phi_{i,x-1\rightarrow x,l}^{(m)}-\Phi_{i,x\rightarrow x+1,l}^{(m)})}_{\text{1. Longitudinal Spatial Advection (FVM)}} \\
+&\quad +\underbrace{\sum_{j\in\{i-1,i+1\}}\lambda_{j\rightarrow i}^{(m)}(f_{x,l},\Omega_{x,l})f_{j,x,l}^{(m)}-\sum_{j\in\{i-1,i+1\}}\lambda_{i\rightarrow j}^{(m)}(f_{x,l},\Omega_{x,l})f_{i,x,l}^{(m)}}_{\text{2. Internal Kinematic Speed Transitions}} \\
+&\quad +\underbrace{\sum_{l^{\prime}\in\{l-1,l+1\}}\gamma_{l^{\prime}\rightarrow l,i}^{(m)}(f,\Omega)f_{i,x,l^{\prime}}^{(m)}-\sum_{l^{\prime}\in\{l-1,l+1\}}\gamma_{l\rightarrow l^{\prime},i}^{(m)}(f,\Omega)f_{i,x,l}^{(m)}}_{\text{3. Lateral Lane-Changing Dynamics}}
+\end{aligned}
+\end{equation}
+
+\section{Mathematical Proof of Global Mass Conservation}
+\begin{theorem}
+Given the unified 3D spatio-lateral autonomous dynamical system, the global mass of any vehicle class $m$, defined as $P^{(m)}=\sum_{x=1}^{X}\sum_{l=1}^{L}\sum_{i=1}^{N}f_{i,x,l}^{(m)}\Delta x$, is entirely conserved internally.
+\end{theorem}
+\begin{proof}
+Taking the time derivative of $P^{(m)}$ and evaluating the unified equation yields strict structural cancellation:
+\begin{itemize}
+    \item \textbf{Vertical Speed Cancellation:} Symmetric summations within isolated cells perfectly cancel ($\sum (\text{Speed Transitions}) = 0$). Analytically sealed by the velocity Dirichlet bounds.
+    \item \textbf{Lateral Lane Cancellation:} Symmetric lane transition pairs identically cancel ($\sum (\text{Lateral Transitions}) = 0$). Analytically sealed by the lateral Dirichlet bounds.
+    \item \textbf{Spatial Telescoping Sum:} The summation strictly reduces to the longitudinal spatial advection at network boundaries ($x=0$ and $x=X+1$).
+\end{itemize}
+This property guarantees no vehicles are unphysically lost or created within the complex 3D non-linear interactions.
+\end{proof}
+
+\section{Multiscale Stiffness and Numerical Resolution via Operator Splitting}
+\subsection{Mathematical Definition of Extreme ODE Stiffness}
+Translating this multiscale system into a discrete numerical environment introduces a severe computational paradox native to Kinetic Theory: Extreme ODE Stiffness.
+\begin{enumerate}
+    \item \textbf{Macroscopic Slow Manifold:} Spatial advection has a characteristic timescale $\tau_{\text{adv}}=\mathcal{O}(\Delta x/v_{\max})$, with Jacobian eigenvalues $\mu_{\text{slow}}\approx-v_{\max}/\Delta x$.
+    \item \textbf{Microscopic Fast Manifold:} Driven by the asymptotic barrier, as cells approach capacity, $\lambda\rightarrow\infty$, leading to a relaxation timescale $\tau_{\text{relax}}=\mathcal{O}(\lambda^{-1})\rightarrow0$ with eigenvalues $\mu_{\text{fast}}\approx-\lambda\rightarrow-\infty$.
+\end{enumerate}
+The system's Stiffness Ratio mathematically explodes: $\mathcal{S}=|\text{Re}(\mu_{\text{fast}})|/|\text{Re}(\mu_{\text{slow}})|\rightarrow\infty$. Standard explicit integrators are mathematically coerced to truncate the time step $\Delta t\rightarrow0$, triggering an exponential explosion in computational cost.
+
+\subsection{Three-Phase First-Order Lie-Trotter Operator Splitting Scheme}
+To completely resolve this stiff numerical disaster without breaking localized topological decoupling, we advance to a \textbf{Three-Phase First-Order Lie-Trotter Operator Splitting} scheme. The master Eulerian derivative is mathematically uncoupled sequentially per discrete time step $\Delta t$:
+
+\vspace{0.5em}
+\noindent \textbf{Phase 1: Explicit Spatial Advection (Non-Stiff Phase).} \\
+The longitudinal FVM advection across macroscopic cell boundaries is evaluated exclusively. Deprived of the singular kinetic barrier, this phase is non-stiff and computationally bounded strictly by the physical Courant-Friedrichs-Lewy (CFL) constraint. \textit{Numerical Prerequisite:} To eliminate numerical overshoot catastrophes that breach physical capacity ($\Omega_{x+1,l} > \rho_{\max}$) during the explicit forward Euler progression, inter-cell advective fluxes must be rigorously restricted by a positivity-preserving flux limiter, dynamically capping the transfer mass at the downstream cell's instantaneous available capacity.
+
+\vspace{0.5em}
+\noindent \textbf{Phase 2: Lateral Lane-Changing Dynamics (Mildly Stiff Phase).} \\
+Spatial advection is temporarily suspended. Vehicles execute lateral transitions. Because the Softplus transition rates possess finite macroscopic bounds without asymptotic singularities, this subsystem is weakly coupled and explicitly resolvable without severe step-size truncation.
+
+\vspace{0.5em}
+\noindent \textbf{Phase 3: Localized Implicit Kinematics (Extremely Stiff Phase).} \\
+During this final phase, both spatial transport and lateral inter-lane transitions are mathematically deactivated. The state evolution is governed exclusively by internal vertical transitions ($\lambda$). To formalize the numerical decoupling, we establish the following topological property:
+
+\begin{lemma}[Exact Occupancy Invariance Principle]
+During the isolated internal kinematic phase, the temporal derivative of the localized effective occupancy $\Omega_{x,l}$ is strictly zero.
+\end{lemma}
+\begin{proof}
+Evaluating the time derivative of Equation (1) under the isolation of Phase 3 yields:
+\begin{equation*}
+\frac{d}{dt}\Omega_{x,l} = \sum_{m=1}^{M} w^{(m)} \left( \sum_{i=1}^{N} \frac{d}{dt}f_{i,x,l}^{(m)} \right)
+\end{equation*}
+Because internal speed transitions form a closed Markovian zero-sum transfer within the specific spatial cell and lane, the inner marginal summation over all speed categories perfectly conserves class mass ($\sum_{i=1}^{N} \frac{d}{dt}f_{i,x,l}^{(m)} \equiv 0$). This structural cancellation relies fundamentally on the axiom that the spatial weight $w^{(m)}$ is dimensionally independent of the velocity index $i$. Consequently, $\frac{d}{dt}\Omega_{x,l} \equiv 0$.
+\end{proof}
+
+\textit{Linearly Implicit Integration:} While $\Omega_{x,l}$ operates as a mathematically proven frozen scalar, the kinetic transitions maintain a bilinear quadratic coupling structure (i.e., $\lambda(f) \cdot f$). To avoid computationally expensive Newton-Raphson non-linear iterations, a semi-implicit (linearly implicit) Euler integration formulation must be adopted. The transition rates $\lambda_{i\rightarrow j}(f(t))$ are evaluated explicitly utilizing the known states from Phase 2, effectively linearizing the operator. 
+
+Because the operator is linearized and $\Omega_{x,l}$ is frozen, the massive global Jacobian matrix structurally disintegrates into $X\times L$ entirely independent, non-interacting Block-Tridiagonal Matrices of dimension $N\times M$. This elegant topological decoupling allows the independent application of unconditionally L-stable linear implicit solvers (e.g., Thomas Algorithm) at a negligible $\mathcal{O}(1)$ localized computational cost. The semi-implicit evaluation instantaneously thermalizes the high-speed injected momentum, successfully absorbing the infinite mathematical stiffness without iterative overhead.
+
+\end{document}

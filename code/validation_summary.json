@@ -1,0 +1,19 @@
+{
+  "total_checks": 30,
+  "passed_checks": 30,
+  "total_elapsed_s": 1.84,
+  "modules": {
+    "V1": {
+      "summary": "PASSED 4/4",
+      "elapsed_s": 0.19,
+      "checks": {
+        "V1-a": {
+          "passed": true,
+          "desc": "max(Ω) ≤ ρ_max (全时域)"
+        },
+        "V1-b": {
+          "passed": true,
+          "desc": "min(Ω) ≥ 0 (全时域)"
+        },
+        "V1-c": {
+          "passed": 

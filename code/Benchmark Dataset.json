@@ -1,0 +1,91 @@
+{
+  "Metadata": {
+    "Model": "Autonomous Multiclass TRM",
+    "Description": "High-fidelity benchmark dataset for stiff ODE resolution, multiscale operator splitting, and multiclass traffic shockwave simulation.",
+    "Topology": "3-Lane Open Highway Segment",
+    "Vehicle_Classes_M": 2
+  },
+
+  "Spatiotemporal_Discretization_Domain": {
+    "Description": "Eulerian FVM grid parameters rigorously satisfying the explicit Phase 1 CFL stability constraint.",
+    "Total_Cells_X": 150,
+    "Cell_Length_Delta_x_meters": 20.0,
+    "Total_Lanes_L": 3,
+    "Time_Step_Delta_t_seconds": 0.5,
+    "Velocity_Spectrum_Categories_N": 15,
+    "Velocity_Spectrum_v_i_mps": [
+      2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0
+    ],
+    "Global_v_max_mps": 30.0,
+    "CFL_Condition_Validation": "Delta_t (0.5) <= Delta_x (20.0) / v_max (30.0) = 0.667. Mathematical explicit stability constraint is strictly satisfied."
+  },
+
+  "Macroscopic_Capacity_and_Filter_Parameters": {
+    "Description": "Constants regulating effective spatial boundaries, regularizers, and continuous exponential relaxation filters.",
+    "rho_max_Absolute_Jam_Density_PCE_per_meter": 0.15,
+    "R_supply_Advection_Filter_PCE_per_meter": 0.035,
+    "R_gap_Lateral_Acceptance_PCE_per_meter": 0.025,
+    "R_c_Acceleration_Relaxation_PCE_per_meter": 0.05,
+    "omega_Softplus_Smoothing_Stiffness": 20.0,
+    "epsilon_Mathematical_Regularizer": 1.0e-8,
+    "eta_Global_Acceleration_Decay_Exponent": 2.0
+  },
+
+  "Heterogeneous_Kinematic_Class_Profiles": {
+    "Description": "Nonlinear dimensional parameters distinguishing Class 1 (Passenger Car) and Class 2 (Heavy Duty Truck) transition dynamics.",
+    "Class_1_Passenger_Car_PC": {
+      "m_index": 1,
+      "w_PCE_Spatial_Weight": 1.0,
+      "alpha_i_Base_Acceleration_Rate_hz": 1.50,
+      "eta_m_Singular_Barrier_Stiffness": 2.0,
+      "omega_0_Spontaneous_Anticipation_hz": 0.01,
+      "kappa_Lateral_Agility_hz": 0.60
+    },
+    "Class_2_Heavy_Duty_Truck_HDT": {
+      "m_index": 2,
+      "w_PCE_Spatial_Weight": 2.5,
+      "alpha_i_Base_Acceleration_Rate_hz": 0.35,
+      "eta_m_Singular_Barrier_Stiffness": 4.5,
+      "omega_0_Spontaneous_Anticipation_hz": 0.05,
+      "kappa_Lateral_Agility_hz": 0.08
+    }
+  },
+
+  "Kinetic_Collision_Kernel_Matrix_Beta": {
+    "Description": "A 2x2 asymmetric matrix beta^{(m,n)} defining interaction probabilities. Rows correspond to the trailing class 'm'. Columns correspond to the downstream blocking class 'n'. Unit: meter^-1.",
+    "Matrix_Values": {
+      "beta_1_1_PC_follows_PC": 0.03,
+      "beta_1_2_PC_follows_HDT": 0.06,
+      "beta_2_1_HDT_follows_PC": 0.08,
+      "beta_2_2_HDT_follows_HDT": 0.12
+    },
+    "Physical_Significance": "beta_1_2 (0.06) > beta_1_1 (0.03) dictates that passenger cars decelerate earlier when forward sightlines are physically occluded by heavy trucks."
+  },
+
+  "Topological_Boundary_Enforcement_Directives": {
+    "Velocity_Spectrum_Edges": {
+      "Lower_Bound": "Force lambda_{1 -> 0} = 0.0 analytically at every integration step.",
+      "Upper_Bound": "Force lambda_{N -> N+1} = 0.0 analytically at every integration step."
+    },
+    "Lateral_Topology_Edges": {
+      "Inner_Bound": "Force gamma_{1 -> 0} = 0.0 analytically at every integration step.",
+      "Outer_Bound": "Force gamma_{L -> L+1} = 0.0 analytically at every integration step."
+    }
+  },
+
+  "Numerical_Validation_Scenario_Extreme_Stiffness": {
+    "Description": "A highly pathological initialization intended to validate the Phase 3 semi-implicit Thomas Algorithm's capacity to absorb infinite ODE stiffness without Newton-Raphson iterations.",
+    "Downstream_Bottleneck_Zone_Cells_75_to_80": {
+      "Description": "A near-capacity jam of Heavy Duty Trucks driving at minimum speed, mathematically creating a massive Singular Asymptotic Barrier B(Omega).",
+      "Density_f_x_l_Class_2_Speed_1_veh_per_meter": 0.058,
+      "Effective_Occupancy_Omega_x_l_PCE_per_meter": 0.145,
+      "Condition": "Omega (0.145) is extremely close to rho_max (0.150). The fractional Singular Barrier evaluates to exactly (0.150 / 0.005)^4.5 = 30.0^4.5 = 4,155,311.9, triggering extreme stiffness."
+    },
+    "Upstream_High_Speed_Injection_Zone_Cells_60_to_70": {
+      "Description": "A dense platoon of Passenger Cars arriving at absolute maximum speed into the bottleneck.",
+      "Density_f_x_l_Class_1_Speed_15_veh_per_meter": 0.06,
+      "Effective_Occupancy_Omega_x_l_PCE_per_meter": 0.06,
+      "Condition": "Expected to trigger severe mathematical stiffness and instantaneous kinematic thermalization upon entering cell 75 during explicit advection."
+    }
+  }
+}

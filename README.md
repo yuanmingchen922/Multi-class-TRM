@@ -1,5 +1,6 @@
 # Multiclass TRM 
-> **Author**: Mingchen and Bingjie
+
+
 > **Validation Status**: **ALL PASSED — 41/41 checks, 7 core claims verified [Reliable]**  
 > **Simulation Scale**: 150 cells × 3 lanes × 15 speed bins × 3 vehicle classes × 500 timesteps = 512 MB HDF5
 

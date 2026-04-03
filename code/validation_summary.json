@@ -1,11 +1,11 @@
 {
-  "total_checks": 30,
-  "passed_checks": 30,
-  "total_elapsed_s": 1.84,
+  "total_checks": 41,
+  "passed_checks": 41,
+  "total_elapsed_s": 3.27,
   "modules": {
     "V1": {
-      "summary": "PASSED 4/4",
-      "elapsed_s": 0.19,
+      "summary": "PASSED 5/5",
+      "elapsed_s": 0.25,
       "checks": {
         "V1-a": {
           "passed": true,
@@ -13,7 +13,7 @@
         },
         "V1-b": {
           "passed": true,
-          "desc": "min(Ω) ≥ 0 (全时域)"
+          "desc": "min(Ω) ≥ 0"
         },
         "V1-c": {
           "passed": 

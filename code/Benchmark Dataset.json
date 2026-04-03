@@ -1,13 +1,18 @@
 {
   "Metadata": {
-    "Model": "Autonomous Multiclass TRM",
-    "Description": "High-fidelity benchmark dataset for stiff ODE resolution, multiscale operator splitting, and multiclass traffic shockwave simulation.",
+    "Model": "Autonomous Multiclass TRM — m3+m4 Unified Moving Bottleneck Extension",
+    "Description": "High-fidelity benchmark dataset for stiff ODE resolution, 4-phase operator splitting, multiclass shockwave simulation, and isomorphic moving bottleneck capture/release dynamics.",
     "Topology": "3-Lane Open Highway Segment",
-    "Vehicle_Classes_M": 2
+    "Vehicle_Classes_M": 3,
+    "Class_Definitions": {
+      "Class_A_m0": "Trucks (heavy vehicles with free-flow speed cap v_A_ff)",
+      "Class_Bf_m1": "B-fast: Freely flowing passenger cars",
+      "Class_Bs_m2": "B-slow: Passenger cars strictly trapped behind moving truck bottleneck"
+    }
   },
 
   "Spatiotemporal_Discretization_Domain": {
-    "Description": "Eulerian FVM grid parameters rigorously satisfying the explicit Phase 1 CFL stability constraint.",
+    "Description": "Eulerian FVM grid parameters satisfying the explicit Phase 4 CFL stability constraint.",
     "Total_Cells_X": 150,
     "Cell_Length_Delta_x_meters": 20.0,
     "Total_Lanes_L": 3,
@@ -17,7 +22,7 @@
       2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0
     ],
     "Global_v_max_mps": 30.0,
-    "CFL_Condition_Validation": "Delta_t (0.5) <= Delta_x (20.0) / v_max (30.0) = 0.667. Mathematical explicit stability constraint is strictly satisfied."
+    "CFL_Condition_Validation": "Delta_t (0.5) <= Delta_x (20.0) / v_max (30.0) = 0.667. Strictly satisfied."
   },
 
   "Macroscopic_Capacity_and_Filter_Parameters": {
@@ -27,65 +32,104 @@
     "R_gap_Lateral_Acceptance_PCE_per_meter": 0.025,
     "R_c_Acceleration_Relaxation_PCE_per_meter": 0.05,
     "omega_Softplus_Smoothing_Stiffness": 20.0,
-    "epsilon_Mathematical_Regularizer": 1.0e-8,
-    "eta_Global_Acceleration_Decay_Exponent": 2.0
+    "epsilon_Mathematical_Regularizer": 1.0e-8
   },
 
   "Heterogeneous_Kinematic_Class_Profiles": {
-    "Description": "Nonlinear dimensional parameters distinguishing Class 1 (Passenger Car) and Class 2 (Heavy Duty Truck) transition dynamics.",
-    "Class_1_Passenger_Car_PC": {
+    "Description": "Parameters for Class A (Trucks), Class Bf (Free Cars), Class Bs (Trapped Cars). Bf and Bs share the same PCE weight w=1.0.",
+    "PCE_Weights_w": [2.5, 1.0, 1.0],
+    "Class_A_Truck": {
+      "m_index": 0,
+      "w_PCE_Spatial_Weight": 2.5,
+      "alpha_Base_Acceleration_Rate_hz": 0.35,
+      "eta_m_Singular_Barrier_Stiffness_Exponent": 4.5,
+      "omega_0_Spontaneous_Anticipation_hz": 0.05,
+      "kappa_Lateral_Agility_hz": 0.08,
+      "v_A_ff_Free_Flow_Speed_Limit_mps": 14.0,
+      "i_thr_Speed_Index_0based": 6,
+      "Note": "v[6]=14.0 m/s is the truck free-flow cap. lambda_acc^(Bs)=0 for i>=i_thr."
+    },
+    "Class_Bf_Free_Car": {
       "m_index": 1,
       "w_PCE_Spatial_Weight": 1.0,
-      "alpha_i_Base_Acceleration_Rate_hz": 1.50,
-      "eta_m_Singular_Barrier_Stiffness": 2.0,
+      "alpha_Base_Acceleration_Rate_hz": 1.50,
+      "eta_m_Singular_Barrier_Stiffness_Exponent": 2.0,
       "omega_0_Spontaneous_Anticipation_hz": 0.01,
       "kappa_Lateral_Agility_hz": 0.60
     },
-    "Class_2_Heavy_Duty_Truck_HDT": {
+    "Class_Bs_Trapped_Car": {
       "m_index": 2,
-      "w_PCE_Spatial_Weight": 2.5,
-      "alpha_i_Base_Acceleration_Rate_hz": 0.35,
-      "eta_m_Singular_Barrier_Stiffness": 4.5,
-      "omega_0_Spontaneous_Anticipation_hz": 0.05,
-      "kappa_Lateral_Agility_hz": 0.08
+      "w_PCE_Spatial_Weight": 1.0,
+      "alpha_Base_Acceleration_Rate_hz": 1.50,
+      "eta_m_Singular_Barrier_Stiffness_Exponent": 2.0,
+      "omega_0_Spontaneous_Anticipation_hz": 0.01,
+      "kappa_Lateral_Agility_hz": 0.0,
+      "Constraints": "lambda_acc^(Bs)=0 for i>=i_thr (Acceleration Blockade). gamma^(Bs)=0 all lanes (Absolute Lateral Immobilization)."
     }
   },
 
   "Kinetic_Collision_Kernel_Matrix_Beta": {
-    "Description": "A 2x2 asymmetric matrix beta^{(m,n)} defining interaction probabilities. Rows correspond to the trailing class 'm'. Columns correspond to the downstream blocking class 'n'. Unit: meter^-1.",
-    "Matrix_Values": {
-      "beta_1_1_PC_follows_PC": 0.03,
-      "beta_1_2_PC_follows_HDT": 0.06,
-      "beta_2_1_HDT_follows_PC": 0.08,
-      "beta_2_2_HDT_follows_HDT": 0.12
-    },
-    "Physical_Significance": "beta_1_2 (0.06) > beta_1_1 (0.03) dictates that passenger cars decelerate earlier when forward sightlines are physically occluded by heavy trucks."
+    "Description": "3x3 matrix beta^{(m,n)}. Row=trailing class m, Column=blocking class n. Unit: m^-1. Interaction term uses w^(n)*f_k^(n)/rho_max normalization.",
+    "Matrix_3x3_row_A_Bf_Bs_col_A_Bf_Bs": [
+      [0.12, 0.08, 0.08],
+      [0.06, 0.03, 0.03],
+      [0.06, 0.03, 0.03]
+    ]
+  },
+
+  "Moving_Bottleneck_Reaction_Parameters": {
+    "Description": "New parameters governing the Capture (Bf->Bs) and Release (Bs->Bf) reactions introduced in the m3+m4 extension.",
+    "v_A_ff_mps": 14.0,
+    "i_thr_0based": 6,
+    "eta_lat_Lateral_Escape_Gate_Exponent": 2.0,
+    "omega_0_BA_Spontaneous_Exposure_hz": 0.05,
+    "beta_BA_Kinetic_Exposure_Rate_per_meter": 0.06,
+    "sigma_0_B_Base_Capture_Rate_hz": 0.5,
+    "mu_0_B_Base_Release_Rate_hz": 0.3,
+    "xi_Lateral_Awareness_Weight": 0.5,
+    "R_A_Truck_Dispersal_Scale_PCE_per_meter": 0.05
+  },
+
+  "Operator_Splitting_Sequence": {
+    "Description": "4-phase Lie-Trotter splitting. Order is critical to prevent ghost penetration.",
+    "Phase_1": "Capture & Release (sigma, mu) — Exact Analytical Matrix Exponential. phi(z)=(1-e^{-z})/z safe at z->0.",
+    "Phase_2": "Internal Speed Changes (lambda) — Dynamic Algebraic Projection for Bs + Semi-implicit Thomas Algorithm.",
+    "Phase_3": "Lateral Lane-Changing (gamma) — Explicit Euler. gamma^(Bs)=0 enforced.",
+    "Phase_4": "Spatial Advection (Phi) — Explicit Euler + Global Godunov Flux Limiter alpha."
   },
 
   "Topological_Boundary_Enforcement_Directives": {
     "Velocity_Spectrum_Edges": {
-      "Lower_Bound": "Force lambda_{1 -> 0} = 0.0 analytically at every integration step.",
-      "Upper_Bound": "Force lambda_{N -> N+1} = 0.0 analytically at every integration step."
+      "Lower_Bound": "lambda_{1->0} = 0 for all classes.",
+      "Upper_Bound": "lambda_{N->N+1} = 0 for all classes.",
+      "Bs_Blockade": "lambda_{i->i+1}^(Bs) = 0 for all i >= i_thr."
     },
     "Lateral_Topology_Edges": {
-      "Inner_Bound": "Force gamma_{1 -> 0} = 0.0 analytically at every integration step.",
-      "Outer_Bound": "Force gamma_{L -> L+1} = 0.0 analytically at every integration step."
+      "Inner_Bound": "gamma_{1->0} = 0. Escape gate G_{1->0} = 1 (boundary = fully blocked).",
+      "Outer_Bound": "gamma_{L->L+1} = 0. Escape gate G_{L->L+1} = 1.",
+      "Bs_Immobilization": "gamma^(Bs) = 0 for all lanes."
     }
   },
 
   "Numerical_Validation_Scenario_Extreme_Stiffness": {
-    "Description": "A highly pathological initialization intended to validate the Phase 3 semi-implicit Thomas Algorithm's capacity to absorb infinite ODE stiffness without Newton-Raphson iterations.",
+    "Description": "Pathological initialization to validate Phase 1 exact exponential, Phase 2 Thomas stability, and Phase 4 Godunov limiter under extreme stiffness.",
     "Downstream_Bottleneck_Zone_Cells_75_to_80": {
-      "Description": "A near-capacity jam of Heavy Duty Trucks driving at minimum speed, mathematically creating a massive Singular Asymptotic Barrier B(Omega).",
-      "Density_f_x_l_Class_2_Speed_1_veh_per_meter": 0.058,
-      "Effective_Occupancy_Omega_x_l_PCE_per_meter": 0.145,
-      "Condition": "Omega (0.145) is extremely close to rho_max (0.150). The fractional Singular Barrier evaluates to exactly (0.150 / 0.005)^4.5 = 30.0^4.5 = 4,155,311.9, triggering extreme stiffness."
+      "Description": "Near-capacity jam of Class A trucks at minimum speed.",
+      "Class": "A (m=0)",
+      "Speed_Index": 0,
+      "Speed_mps": 2.0,
+      "Density_veh_per_meter": 0.058,
+      "Effective_Occupancy_PCE_per_meter": 0.145,
+      "Condition": "Omega=0.145 near rho_max=0.150. Singular Barrier B=(0.15/0.005)^4.5=30^4.5=4,155,311.9."
     },
     "Upstream_High_Speed_Injection_Zone_Cells_60_to_70": {
-      "Description": "A dense platoon of Passenger Cars arriving at absolute maximum speed into the bottleneck.",
-      "Density_f_x_l_Class_1_Speed_15_veh_per_meter": 0.06,
-      "Effective_Occupancy_Omega_x_l_PCE_per_meter": 0.06,
-      "Condition": "Expected to trigger severe mathematical stiffness and instantaneous kinematic thermalization upon entering cell 75 during explicit advection."
+      "Description": "Dense platoon of Class Bf free cars at maximum speed approaching bottleneck.",
+      "Class": "Bf (m=1)",
+      "Speed_Index": 14,
+      "Speed_mps": 30.0,
+      "Density_veh_per_meter": 0.060,
+      "Effective_Occupancy_PCE_per_meter": 0.060,
+      "Condition": "Expected to trigger Phase 1 capture upon hitting bottleneck, validating moving bottleneck entrapment."
     }
   }
 }

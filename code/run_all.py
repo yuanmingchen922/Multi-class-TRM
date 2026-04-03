@@ -1,7 +1,7 @@
 """
-run_all.py — 主验证入口
-按顺序运行 V1-V6 全部验证模块，收集结果，打印汇总报告。
-最终判断 Multi-class TRM (.tex) 各项核心命题的数值可靠性。
+run_all.py — 主验证入口  (m3+m4 升级版)
+按顺序运行 V1-V7 全部验证模块，收集结果，打印汇总报告。
+最终判断 Autonomous Multiclass TRM m3+m4 (.tex) 各项核心命题的数值可靠性。
 """
 
 import os
@@ -18,6 +18,7 @@ import V3_fvm
 import V4_lateral
 import V5_mass
 import V6_stiffness
+import V7_reactions
 
 # ── 研究可靠性判断标准 ─────────────────────────────────────────────────────────
 RESEARCH_CLAIMS = {
@@ -32,8 +33,8 @@ RESEARCH_CLAIMS = {
         'module': 'V1+V2'
     },
     'claim_3': {
-        'desc': 'Lie-Trotter + Thomas 算法解决极端刚性',
-        'checks': ['V6-a', 'V6-c', 'V6-d'],
+        'desc': 'Lie-Trotter 4 相分裂 + Thomas 算法解决极端刚性',
+        'checks': ['V6-a', 'V6-c', 'V6-d', 'V6-f'],
         'module': 'V6'
     },
     'claim_4': {
@@ -42,9 +43,19 @@ RESEARCH_CLAIMS = {
         'module': 'V5'
     },
     'claim_5': {
-        'desc': 'FVM 正值性与激波有机形成',
-        'checks': ['V3-a', 'V3-b', 'V3-d'],
+        'desc': 'FVM 正值性与激波有机形成 (全局 Godunov 限制器)',
+        'checks': ['V3-a', 'V3-b', 'V3-d', 'V3-e'],
         'module': 'V3'
+    },
+    'claim_6': {
+        'desc': '移动瓶颈捕获/释放守恒 (Phase 1 精确矩阵指数零和)',
+        'checks': ['V7-a', 'V7-b', 'V7-c', 'V7-d'],
+        'module': 'V7'
+    },
+    'claim_7': {
+        'desc': 'Bs 约束系统: 加速封锁 + 绝对侧向禁止 (m3+m4 等构扩展)',
+        'checks': ['V2-g', 'V4-f', 'V7-c'],
+        'module': 'V2+V4+V7'
     },
 }
 
@@ -53,8 +64,10 @@ SEP = '=' * 68
 
 def run_all():
     print(f"\n{SEP}")
-    print("  Autonomous Multiclass TRM — 综合验证框架")
-    print("  对应: Multi-class_TRM.tex + Benchmark Dataset.json")
+    print("  Autonomous Multiclass TRM m3+m4 — 综合验证框架")
+    print("  对应: Multi-class_TRM.tex (m3+m4) + Benchmark Dataset.json")
+    print("  模块: V1 占用 | V2 运动学 | V3 FVM | V4 侧向")
+    print("        V5 质量守恒 | V6 刚性 | V7 捕获/释放反应")
     print(SEP)
 
     all_results = {}
@@ -67,6 +80,7 @@ def run_all():
         ('V4', V4_lateral),
         ('V5', V5_mass),
         ('V6', V6_stiffness),
+        ('V7', V7_reactions),
     ]
 
     for name, mod in modules:

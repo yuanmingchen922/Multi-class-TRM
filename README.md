@@ -1,6 +1,5 @@
-# Autonomous Multiclass TRM m3+m4 — Validation Results (English)
-
-> **Full Model Name**: Autonomous Multiclass Traffic Kinematic Model — m3+m4 Isomorphic Moving Bottleneck Subclass Extension  
+# Multiclass TRM m3+m4
+> **Author**: Mingchen and Bingjie
 > **Validation Status**: **ALL PASSED — 41/41 checks, 7 core claims verified [Reliable]**  
 > **Simulation Scale**: 150 cells × 3 lanes × 15 speed bins × 3 vehicle classes × 500 timesteps = 512 MB HDF5
 

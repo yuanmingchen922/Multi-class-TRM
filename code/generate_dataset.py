@@ -363,8 +363,21 @@ def phase3_advection(f, omega):
     # ── Apply alpha to all classes simultaneously ────────────────────────────
     phi[:, :, 1:X, :] = Psi_internal * alpha_g[None, None, :, :]
 
-    # ── Right boundary: free outflow (no downstream constraint) ─────────────
-    phi[:, :, X, :] = v[None, :, None] * f[:, :, X - 1, :]
+    # ── Ring road periodic boundary ──────────────────────────────────────────
+    # face X: vehicles leaving cell X-1 enter cell 0 (periodic).
+    # Apply supply filter and Godunov limiter using omega[0] as downstream.
+    supply_arg_X    = np.maximum(0.0, rho_max - omega[0, :])            # (L,)
+    supply_factor_X = 1.0 - np.exp(-supply_arg_X / R_supply)           # (L,)
+    Psi_X = (v[None, :, None] * f[:, :, X - 1, :]
+             * supply_factor_X[None, None, :])                          # (M, N, L)
+    D_X     = (dt / dx) * (w[:, None, None] * Psi_X).sum(axis=(0, 1)) # (L,)
+    avail_X = np.maximum(0.0, rho_max - omega[0, :])                   # (L,)
+    alpha_X = np.where(D_X > eps,
+                       np.minimum(1.0, avail_X / D_X), 1.0)            # (L,)
+    phi[:, :, X, :] = Psi_X * alpha_X[None, None, :]
+
+    # face 0: what enters cell 0 from the "left" = what left cell X-1 (periodic)
+    phi[:, :, 0, :] = phi[:, :, X, :]
 
     # ── FVM update ────────────────────────────────────────────────────────────
     f_new = f + (dt / dx) * (phi[:, :, :X, :] - phi[:, :, 1:X + 1, :])
@@ -498,9 +511,6 @@ def run(output_path):
     dg     = hf['data']
     diag   = hf['diagnostics/mass_rel_error_B']
 
-    # Upstream inflow: Bf cars at max speed into all lanes
-    INFLOW_BF = 0.001   # veh/m
-
     t_wall = time.perf_counter()
 
     for t in range(T_STEPS):
@@ -518,10 +528,6 @@ def run(output_path):
         # Phase 3: Spatial Advection (global Godunov)
         omega = compute_omega(f)
         f, phi = phase3_advection(f, omega)
-
-        # Upstream inflow boundary (Bf at max speed)
-        f[1, N - 1, 0, :] += INFLOW_BF * dt
-        f = np.minimum(f, rho_max)
 
         # Final omega
         omega_final = compute_omega(f)
@@ -566,7 +572,7 @@ def run(output_path):
         '3-phase Lie-Trotter: Capture/Release (P_block exact exp) -> '
         'Kinematics+Projection (Thomas) -> Advection (global Godunov). '
         'No lateral phase. Lanes independent. '
-        'Benchmark: A bottleneck cells 74-79, Bf injection cells 59-69.'
+        'Ring road (periodic BC): A bottleneck cells 74-79, Bf platoon cells 59-69. No external inflow.'
     )
     hf.close()
 

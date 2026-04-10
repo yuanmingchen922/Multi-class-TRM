@@ -124,7 +124,7 @@ In this benchmark, **both waves appear naturally** from the truck bottleneck set
 
 ### Riemann Problem I — Shock Wave (Check V3-c)
 
-**Setup**: Fast-moving passenger cars (Bf platoon) are injected at cells x = 59–69. They travel rightward and collide with a stationary truck bottleneck at x = 74–79.
+**Setup**: The road is a **ring road** (periodic boundary) — vehicles exiting at cell x = 149 re-enter at cell x = 0. The initial state places a fast Bf platoon at cells x = 59–69 (v = 30 m/s) and a slow truck bottleneck at cells x = 74–79 (v = 2 m/s). No external inflow exists; the total mass is fixed.
 
 **What happens physically**:
 - The trucks barely move. The cars behind them build up.
@@ -191,10 +191,10 @@ This plot tracks the single highest density value found anywhere in the road net
 This bar chart decomposes who is contributing what to the total occupancy at each road cell at the very start of the simulation.
 
 - **Orange bars (Class A, trucks)**: A tall spike at cells 74–79 reaching exactly 0.145 — this confirms the trucks are correctly initialized and their PCE weight (×2.5) is applied properly.
-- **Blue bars (Class Bf, free cars)**: A broad band at cells 59–69 reaching about 0.06. These are the passenger cars injected upstream of the bottleneck.
+- **Blue bars (Class Bf, free cars)**: A broad band at cells 59–69 reaching about 0.06. These are the passenger cars placed as an initial high-speed platoon upstream of the bottleneck.
 - **Green bars (Class Bs, trapped)**: Essentially zero everywhere at t = 0. This is correct — trapping only begins once the free cars interact with the bottleneck.
 - **Red dashed line**: ρ_max = 0.15. All bars stay below it.
-- **Red shading** at x = 74–79: bottleneck zone. **Blue shading** at x = 59–69: Bf injection zone.
+- **Red shading** at x = 74–79: bottleneck zone. **Blue shading** at x = 59–69: initial Bf platoon zone.
 
 **Checks V1-b through V1-e** verify: density is never negative, the Ω formula is computed exactly (error < 1e-10), and the PCE weights for Bf and Bs are equal (both = 1.0), meaning swapping a Bf for a Bs doesn't change the road occupancy.
 
@@ -259,14 +259,14 @@ The x-axis is the downstream cell's occupancy. The y-axis is the "demand flux" �
 - This is the supply filter: if the next cell is already full, nothing more can enter. No matter how many cars want to move forward, Ψ = 0 at capacity.
 - The global Godunov limiter α ≤ 1 then scales all classes proportionally, ensuring the total inflow matches available space.
 
-**Top-right — [V3-c/g] Hovmöller space-time density plot — the Riemann problem signature:**
+**Top-right — [V3-c/g] Hovmöller space-time density plot — the Riemann problem signature (ring road):**
 
-This is the most important figure in V3. The x-axis is road position (cell 0 to 150), the y-axis is time (0 to 250 s), and the color shows average density (yellow = empty, dark red = congested).
+This is the most important figure in V3. The x-axis is road position (cell 0 to 149), the y-axis is time (0 to 250 s), and the color shows average density (yellow = empty, dark red = congested). The two **cyan dotted lines** at x = 0 and x = 149 mark the ring join — these two edges are adjacent in the periodic topology.
 
-- The **dark red vertical band** at x = 74–79 is the truck bottleneck. Trucks sit there and create high density from the very start (t = 0) through most of the simulation.
-- Look carefully at the **left boundary of the dark region**: it leans leftward as time progresses. This is the **backward-propagating shock wave** — the jam spreading upstream. Cars pile up further and further back over time.
-- The **right side** of the bottleneck region (x > 80): color is much lighter and fades smoothly. This is the **forward-propagating rarefaction wave** — cars escape into free space smoothly with no sharp boundary.
-- Both Riemann wave types are visible as **geometric patterns in this single image**.
+- The **dark red band** around x = 74–79 is the truck bottleneck. It builds up from t = 0 as the fast Bf platoon collides with the slow trucks.
+- The **left boundary of the dark region** leans leftward over time: the **backward-propagating shock wave** (V3-c). Upstream density at x = 68–73 rises from 0.028 to 0.069 (delta = +0.042), confirming the shock is real.
+- The **right side** (x > 80) shows lighter, smoothly fading color: the **forward-propagating rarefaction wave** (V3-g). No sharp front — the density gradient is only 0.019, well below the 0.075 threshold.
+- Because this is a ring road with fixed total mass, waves circulate: density eventually redistributes uniformly as the bottleneck weakens.
 
 **Bottom-left — [V3-f] Fundamental diagram — two traffic states coexist:**
 
@@ -280,11 +280,11 @@ Each point represents the (density, flow) state at one road cell at one time sna
 
 Three time slices showing where each vehicle class is concentrated.
 
-- **Orange (A trucks)**: A sharp spike at x = 74–79 that barely moves — trucks are slow.
-- **Blue (Bf free cars)**: A broader wave that starts at x = 59–89 and propagates rightward. The leading edge moves at Bf's injection speed (~30 m/s).
-- **Green (Bs trapped cars)**: Nearly zero at t = 0 (no trapping yet), grows near x = 74–79 as Bf cars get captured, then disperses downstream as the bottleneck weakens.
+- **Orange (A trucks)**: A sharp spike at x = 74–79 that barely moves — trucks are slow (v = 2 m/s).
+- **Blue (Bf free cars)**: A broader wave that starts at x = 59–89 and propagates rightward, circulating around the ring.
+- **Green (Bs trapped cars)**: Nearly zero at t = 0 (no trapping yet), grows near x = 74–79 as Bf cars get captured, then disperses as the bottleneck weakens.
 
-The shaded regions confirm the bottleneck (red) and injection zone (blue) are where the dynamics originate.
+The shaded regions confirm the bottleneck (red) and initial platoon zone (blue) are where the dynamics originate.
 
 **Conclusion — V3: 7/7 PASSED** (including both Riemann problem checks).
 
@@ -345,22 +345,22 @@ This is the **kinematic blockade**: trapped cars are physically blocked from acc
 
 ![V5_mass](figures/V5_mass.png)
 
-**What is mass conservation in traffic?** The total number of vehicles on the road changes only due to vehicles entering or leaving at the boundaries (on-ramps, off-ramps). No vehicles appear from thin air or disappear in the middle of the road. In mathematical terms: the change in total mass equals the boundary flux.
+**What is mass conservation in traffic?** On a ring road, no vehicles enter or leave — the total count is fixed forever. No vehicles appear from thin air or disappear. In mathematical terms: the change in total mass must be exactly zero at every step. This is a stronger test than an open boundary, where small boundary-flux errors could mask problems.
 
 **Top-left — [V5-a/b] Total mass P^(m)(t) for each class:**
 
-- **Orange (Class A trucks)**: starts at ~50 (veh·m), gradually decreases as trucks flow off the right end of the road.
-- **Blue (Class Bf, free cars)**: starts at ~35, drops significantly in the first 100 s as Bf cars are captured and become Bs, then partially recovers.
-- **Green (Class Bs, trapped)**: starts at zero (no trapping initially), rises sharply as the Bf-truck interaction occurs, then falls as the bottleneck weakens.
-- **Black dashed (Bf + Bs combined)**: stays remarkably stable around 35–45 veh·m. This proves Phase 1 (capture/release) is a **zero-sum exchange**: cars move between Bf and Bs, but the total B-class count is preserved.
+- **Orange (Class A trucks)**: stays perfectly constant — trucks circulate on the ring, neither created nor destroyed.
+- **Blue (Class Bf, free cars)**: drops significantly in the first 50–100 s as Bf cars are captured and become Bs, then partially recovers as the bottleneck weakens.
+- **Green (Class Bs, trapped)**: starts at zero, rises sharply as the Bf-truck interaction occurs, then falls as trapped cars are released.
+- **Black dashed (Bf + Bs combined)**: completely flat throughout — every car that becomes Bs was previously Bf. Phase 1 is a **perfect internal trade**.
 
 **Top-center — [V5-c] Relative mass conservation error (log scale):**
 
-The y-axis shows how much the measured mass change deviates from what the boundary flux would predict, as a fraction.
+The y-axis shows how much the measured mass change deviates from the theoretical zero (ring road: no boundary flux).
 
-- **Orange (B class = Bf + Bs combined)**: oscillates around 3 × 10⁻³ (0.3% error). Stays well below the red dashed threshold at 10⁻² (1%).
-- **Blue (Class A)**: even smaller, around 10⁻⁵ to 10⁻⁶. Trucks are well-behaved numerically.
-- Both pass easily. The small non-zero error is expected from numerical discretization.
+- **Orange (B class = Bf + Bs combined)**: error ≈ 5 × 10⁻¹⁶ — machine precision (≈ 2 × double-precision epsilon). Effectively zero.
+- **Blue (Class A)**: error ≈ 6 × 10⁻¹⁶ — equally perfect.
+- Ring road makes this check exact: with periodic boundaries `phi[face=0] = phi[face=X]`, the net flux is identically zero by construction.
 
 **Top-right — [V5-f] Phase 1 zero-sum visualization:**
 
@@ -501,7 +501,7 @@ The exact matrix exponential guarantees this zero-sum property analytically. Any
 | 1 | **P_block is bounded, monotone, and well-posed** | V4-a (range [0,1]); V4-b (monotone analytically and numerically); V4-c (exact boundary conditions) | **RELIABLE** |
 | 2 | **Singular barrier B(Ω) prevents overcapacity** | V2-c (exact barrier value 4.44×10⁶); V2-f (ω₀ prevents 0×∞); V1-a (max Ω never exceeds ρ_max) | **RELIABLE** |
 | 3 | **3-phase Lie-Trotter + Thomas algorithm handles extreme stiffness** | V6-a (S up to 10¹⁵); V6-c (explicit diverges, Thomas stable); V6-d (residual 6.94×10⁻¹⁸); V6-f (φ safe) | **RELIABLE** |
-| 4 | **Global mass conservation (Theorem 1) holds** | V5-a (B class error < 0.35%); V5-b (A class error < 0.001%); V5-c (generator diagnostic < 1%); V5-d (cell-level lemma) | **RELIABLE** |
+| 4 | **Global mass conservation (Theorem 1) holds** | V5-a (B class error 5×10⁻¹⁶ = machine precision; ring road: zero net flux); V5-b (A class error 6×10⁻¹⁶); V5-d (cell-level lemma 9×10⁻⁵) | **RELIABLE** |
 | 5 | **Both Riemann wave types are physically correct** | V3-c (shock: upstream Ω increases, backward propagation confirmed); V3-g (rarefaction: smooth downstream gradient, no trapping downstream) | **RELIABLE** |
 | 6 | **Phase 1 exact matrix exponential is zero-sum and stable** | V7-a (φ safe); V7-b (P_block topology); V7-c (projection invariant); V7-d (σ,μ ≥ 0; Bf+Bs conserved) | **RELIABLE** |
 | 7 | **Bs kinematic blockade replaces lateral prohibition** | V2-g (λ_acc^(Bs)[i≥i_thr] = 0 exactly); V4-f (f^(Bs)[i>i_thr] = 10⁻²⁰); V7-c (global invariant throughout 250 s) | **RELIABLE** |

@@ -243,9 +243,12 @@ def run():
                            cmap='YlOrRd', vmin=0, vmax=rho_max)
         plt.colorbar(im, ax=ax, label=r'$\bar{\rho}$ [veh/m]')
         ax.set_xlabel('Cell x'); ax.set_ylabel('Time [s]')
-        ax.set_title('[V3-c/g] Hovmoller Space-Time Density\n(Shock backward, Rarefaction forward)')
+        ax.set_title('[V3-c/g] Hovmoller Space-Time Density — Ring Road\n'
+                     '(x=0 \u2194 x=149 adjacent; shock builds behind truck jam)')
         ax.axvline(74, color='white', ls='--', lw=1, alpha=0.7)
         ax.axvline(79, color='white', ls='--', lw=1, alpha=0.7)
+        ax.axvline(0,   color='cyan', ls=':', lw=1, alpha=0.6)
+        ax.axvline(X-1, color='cyan', ls=':', lw=1, alpha=0.6)
 
         # 图3: 基本图 (B 类 Bf+Bs)
         ax = axes[1, 0]

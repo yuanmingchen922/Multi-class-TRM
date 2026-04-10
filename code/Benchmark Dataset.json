@@ -102,7 +102,8 @@
       "Upper_Bound": "lambda_{N->N+1} = 0 for all classes.",
       "Bs_Blockade": "lambda_{i->i+1}^(Bs) = 0 for all i >= i_thr."
     },
-    "Lateral_Topology": "No lateral phase. Lanes are fully independent 1D systems. Bs constraint is purely kinematic (acceleration blockade)."
+    "Lateral_Topology": "No lateral phase. Lanes are fully independent 1D systems. Bs constraint is purely kinematic (acceleration blockade).",
+    "Spatial_Boundary": "Ring road (periodic). Vehicles exiting at x=X-1 re-enter at x=0 with supply-filtered Godunov flux. No external inflow or outflow. Net boundary mass flux = 0."
   },
 
   "Numerical_Validation_Scenario_Extreme_Stiffness": {

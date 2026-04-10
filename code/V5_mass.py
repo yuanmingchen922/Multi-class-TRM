@@ -90,8 +90,9 @@ def run():
             dP_B = P_B[t+1] - P_B[t]
             dP_A = P_mass[t+1, 0] - P_mass[t, 0]
 
-            # 边界净流入 (Bf+Bs 合并通量): phi[m,i,face=0,l] - phi[m,i,face=X,l]
-            # sum over m={1,2}, i, l
+            # 边界净流入: phi[face=0] - phi[face=X]
+            # Ring road: phi[:,0,:] = phi[:,X,:] by construction → net_inflow = 0.
+            # This check then tests that dP ≈ 0 (total mass conserved internally).
             net_inflow_B = ((phi_all[t, 1, :, 0, :] - phi_all[t, 1, :, X, :]).sum() +
                             (phi_all[t, 2, :, 0, :] - phi_all[t, 2, :, X, :]).sum()) * dt
             net_inflow_A = (phi_all[t, 0, :, 0, :] - phi_all[t, 0, :, X, :]).sum() * dt

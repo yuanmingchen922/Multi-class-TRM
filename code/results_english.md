@@ -124,7 +124,7 @@ In this benchmark, **both waves appear naturally** from the truck bottleneck set
 
 ### Riemann Problem I — Shock Wave (Check V3-c)
 
-**Setup**: The road is a **ring road** (periodic boundary) — vehicles exiting at cell x = 149 re-enter at cell x = 0. The initial state places a fast Bf platoon at cells x = 59–69 (v = 30 m/s) and a slow truck bottleneck at cells x = 74–79 (v = 2 m/s). No external inflow exists; the total mass is fixed.
+**Setup**: The road is a **ring road** (periodic boundary) — vehicles exiting at cell x = 149 re-enter at cell x = 0. The initial state places **uniform Bf cars across the entire upstream zone x = 0–73** (v = 30 m/s, ρ = 0.020 veh/m) and a slow truck bottleneck at cells x = 74–79 (v = 2 m/s). No external inflow exists; the total mass is fixed. The uniform upstream IC is a classic Riemann initial condition: a step-function density contrast that produces a sustained shock rather than a transient pulse.
 
 **What happens physically**:
 - The trucks barely move. The cars behind them build up.
@@ -136,8 +136,8 @@ In this benchmark, **both waves appear naturally** from the truck bottleneck set
 **How we validate it (V3-c)**:
 We measure the average density in the region *just upstream* of the bottleneck (cells x = 68–73). If a shock propagated backward, this region should become more congested over time — even though nothing happened there directly.
 
-- Upstream Ω at t = 0: ≈ 0.0 (empty at start)
-- Upstream Ω at t = 50s: clearly higher (shock has arrived)
+- Upstream Ω at t = 0: ≈ 0.023 (uniform Bf background fills x = 0–73)
+- Upstream Ω at late time (t = 100s): ≈ 0.127 — a density increase of **+0.104**
 - Positive delta confirms: **backward shock wave detected** ✓
 
 Additionally, we check that Bs (trapped cars) appear in significant numbers — if trapping occurred, the shock mechanism is active.
@@ -191,10 +191,10 @@ This plot tracks the single highest density value found anywhere in the road net
 This bar chart decomposes who is contributing what to the total occupancy at each road cell at the very start of the simulation.
 
 - **Orange bars (Class A, trucks)**: A tall spike at cells 74–79 reaching exactly 0.145 — this confirms the trucks are correctly initialized and their PCE weight (×2.5) is applied properly.
-- **Blue bars (Class Bf, free cars)**: A broad band at cells 59–69 reaching about 0.06. These are the passenger cars placed as an initial high-speed platoon upstream of the bottleneck.
+- **Blue bars (Class Bf, free cars)**: A low, wide band covering cells 0–73 at ≈ 0.020 — the uniform upstream IC. All passenger cars start at v = 30 m/s heading toward the truck bottleneck.
 - **Green bars (Class Bs, trapped)**: Essentially zero everywhere at t = 0. This is correct — trapping only begins once the free cars interact with the bottleneck.
 - **Red dashed line**: ρ_max = 0.15. All bars stay below it.
-- **Red shading** at x = 74–79: bottleneck zone. **Blue shading** at x = 59–69: initial Bf platoon zone.
+- **Red shading** at x = 74–79: bottleneck zone. **Blue shading** at x = 0–73: uniform Bf upstream zone.
 
 **Checks V1-b through V1-e** verify: density is never negative, the Ω formula is computed exactly (error < 1e-10), and the PCE weights for Bf and Bs are equal (both = 1.0), meaning swapping a Bf for a Bs doesn't change the road occupancy.
 
@@ -263,10 +263,10 @@ The x-axis is the downstream cell's occupancy. The y-axis is the "demand flux" �
 
 This is the most important figure in V3. The x-axis is road position (cell 0 to 149), the y-axis is time (0 to 250 s), and the color shows average density (yellow = empty, dark red = congested). The two **cyan dotted lines** at x = 0 and x = 149 mark the ring join — these two edges are adjacent in the periodic topology.
 
-- The **dark red band** around x = 74–79 is the truck bottleneck. It builds up from t = 0 as the fast Bf platoon collides with the slow trucks.
-- The **left boundary of the dark region** leans leftward over time: the **backward-propagating shock wave** (V3-c). Upstream density at x = 68–73 rises from 0.028 to 0.069 (delta = +0.042), confirming the shock is real.
+- The **dark red band** around x = 74–79 is the truck bottleneck. It intensifies from t = 0 as the uniform Bf stream continuously feeds into the slow trucks.
+- The **left boundary of the dark region** leans leftward over time: the **backward-propagating shock wave** (V3-c). Upstream density at x = 68–73 rises from 0.023 to 0.127 (delta = **+0.104**), confirming the shock is real and strong.
 - The **right side** (x > 80) shows lighter, smoothly fading color: the **forward-propagating rarefaction wave** (V3-g). No sharp front — the density gradient is only 0.019, well below the 0.075 threshold.
-- Because this is a ring road with fixed total mass, waves circulate: density eventually redistributes uniformly as the bottleneck weakens.
+- Because this is a ring road with fixed total mass, the sustained uniform Bf inflow keeps the shock active throughout the 250 s simulation.
 
 **Bottom-left — [V3-f] Fundamental diagram — two traffic states coexist:**
 
@@ -281,10 +281,10 @@ Each point represents the (density, flow) state at one road cell at one time sna
 Three time slices showing where each vehicle class is concentrated.
 
 - **Orange (A trucks)**: A sharp spike at x = 74–79 that barely moves — trucks are slow (v = 2 m/s).
-- **Blue (Bf free cars)**: A broader wave that starts at x = 59–89 and propagates rightward, circulating around the ring.
+- **Blue (Bf free cars)**: A uniform low-density layer covering x = 0–73 at t = 0, depleting near the bottleneck as Bf cars get captured into Bs.
 - **Green (Bs trapped cars)**: Nearly zero at t = 0 (no trapping yet), grows near x = 74–79 as Bf cars get captured, then disperses as the bottleneck weakens.
 
-The shaded regions confirm the bottleneck (red) and initial platoon zone (blue) are where the dynamics originate.
+The shaded regions confirm the bottleneck (red) and uniform Bf upstream zone (blue, x = 0–73) as the origin of the dynamics.
 
 **Conclusion — V3: 7/7 PASSED** (including both Riemann problem checks).
 
@@ -309,8 +309,8 @@ The curve is convex — blocking increases slowly at first and accelerates as de
 Three colored lines show P_block averaged across lanes at each road cell, at different time snapshots (t = 0s, 50s, 100s).
 
 - **Sharp peak at x = 74–79** (red shaded, truck bottleneck): P_block ≈ 0.93 at t = 0. This means 93% blocking probability — the trucks have nearly saturated the road.
-- **Moderate values at x = 59–69** (blue shaded, Bf injection zone): P_block ≈ 0.12, since free cars add density but less than trucks.
-- **Near-zero everywhere else**: open road, almost no blocking.
+- **Moderate, broadly uniform values at x = 0–73** (blue shaded, uniform Bf upstream): P_block ≈ 0.02–0.10, since the Bf background density (0.020 veh/m) adds a low but uniform blocking contribution across the entire upstream zone.
+- **Near-zero at x > 80**: downstream of the bottleneck, almost no blocking once cars escape.
 - As time progresses, the bottleneck P_block decreases (trucks move on) — the simulation is physically realistic.
 
 **Top-right — [V4-b] Numerical verification of monotonicity:**
@@ -328,8 +328,8 @@ Each point is one road cell at t = 50s. The color encodes P_block (green = low, 
 **Bottom-center — [V4-a] P_block time evolution at three key cells:**
 
 - **Red line (x = 77, bottleneck center)**: starts at ≈ 0.93, then gradually decreases as trucks disperse.
-- **Blue line (x = 65, injection zone)**: starts low, rises as Bf cars arrive, then falls.
-- **Green line (x = 10, upstream free zone)**: stays near zero throughout — free-flow conditions never reach blocking levels there.
+- **Blue line (x = 65, uniform Bf zone)**: starts at a low background level (ρ = 0.020 veh/m), rises as the shock sweeps back and concentrates Bf cars, then falls as mass redistributes.
+- **Green line (x = 10, upstream Bf zone)**: also starts at the Bf background, rises as the backward shock eventually reaches it, confirming the shock propagates well upstream.
 
 **Bottom-right — [V4-f] Bs kinematic blockade verification:**
 
@@ -469,9 +469,9 @@ Green solid line: P_block averaged over lanes at each cell. Blue dashed: Ω aver
 
 The two curves are nearly identical in shape — both peak at the truck bottleneck (red shaded x = 74–79). This confirms that P_block faithfully represents local congestion: where the road is densest, blocking probability is highest.
 
-**Bottom-left — [V7-d] σ and μ at the injection zone over time:**
+**Bottom-left — [V7-d] σ and μ at the upstream Bf zone over time:**
 
-At cell x = 65, lane 1 (where Bf cars enter):
+At cell x = 65, lane 1 (inside the uniform Bf upstream region):
 - **Green (σ)**: capture rate. Near zero at first (no trucks nearby), stays modest throughout.
 - **Red (μ)**: release rate. Also near zero (few Bs cars at that location to release).
 - Both remain **non-negative at all times** — a necessary condition for physical conservation. If either went negative, it would mean cars are being created from nothing (σ < 0) or destroyed (μ < 0). Neither happens.

@@ -230,7 +230,7 @@ def run():
             P_mean = P_block_all[t_snap].mean(axis=1)
             ax.plot(x_cells, P_mean, color=col, lw=1.5, label=label)
         ax.axvspan(74, 79, alpha=0.1, color='red', label='Bottleneck')
-        ax.axvspan(59, 69, alpha=0.1, color='blue', label='Injection')
+        ax.axvspan(0, 73, alpha=0.05, color='blue', label='Bf Upstream (uniform IC)')
         ax.set_xlabel('Cell x', fontsize=10)
         ax.set_ylabel(r'$P_{block}$ (lane-avg)', fontsize=10)
         ax.set_title('[V4-a/b] P_block Spatial Distribution\n(Multiple Snapshots)', fontsize=9)
@@ -264,8 +264,8 @@ def run():
         # Figure V4-5: P_block time evolution at key cells
         ax = axes[1, 1]
         for cell, col, lbl in [(77, 'C3', 'x=77 (bottleneck)'),
-                                (65, 'C0', 'x=65 (injection)'),
-                                (10, 'C2', 'x=10 (upstream free)')]:
+                                (65, 'C0', 'x=65 (uniform Bf zone)'),
+                                (10, 'C2', 'x=10 (upstream Bf)')]:
             P_series = P_block_all[:, cell, 0]
             ax.plot(time_s, P_series, color=col, lw=1.5, label=lbl)
         ax.axhline(1.0, color='gray', ls='--', lw=1, alpha=0.7)

@@ -166,7 +166,7 @@ def run():
         ax2.fill_between(x_cells, omega_A+omega_Bf, omega_A+omega_Bf+omega_Bs, alpha=0.5, color='C2', label='Class Bs (Trapped)')
         ax2.axhline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
         ax2.axvspan(74, 79, alpha=0.1, color='red')
-        ax2.axvspan(59, 69, alpha=0.1, color='blue')
+        ax2.axvspan(0, 73, alpha=0.04, color='blue')
         ax2.set_xlabel('Cell x'); ax2.set_ylabel(r'$\Omega$ [PCE/m]')
         ax2.set_title('[V1-c] t=0 Per-class Occupancy Contribution (Middle Lane)')
         ax2.legend(fontsize=8); ax2.grid(alpha=0.3)

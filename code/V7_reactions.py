@@ -224,7 +224,7 @@ def run():
         ax.plot(x_cells, P_mean_l, 'C2-', lw=2, label='P_block (lane-avg)')
         ax2_.plot(x_cells, omega_mean_l, 'C0--', lw=1.5, alpha=0.7, label='Omega (lane-avg)')
         ax.axvspan(74, 79, alpha=0.1, color='red')
-        ax.axvspan(59, 69, alpha=0.1, color='blue')
+        ax.axvspan(0, 73, alpha=0.05, color='blue')
         ax.set_xlabel('Cell x', fontsize=10)
         ax.set_ylabel('P_block', fontsize=10, color='C2')
         ax2_.set_ylabel('Omega [PCE/m]', fontsize=10, color='C0')

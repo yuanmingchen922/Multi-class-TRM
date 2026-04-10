@@ -130,8 +130,10 @@ def run():
         # 或等价: Φ ≤ Ψ，且 Φ·(ρ_max - Ω_downstream) ≤ ρ_max (不超满载)
         max_alpha_violation = 0.0
         for t in range(0, T, 40):
-            phi_t   = hf['data/phi'][t]       # (M, N, X+1, L)
-            omega_t = hf['data/omega'][t]     # (X, L)
+            phi_t   = hf['data/phi'][t]                         # (M, N, X+1, L)
+            omega_t = hf['data/omega'][max(0, t - 1)]           # pre-advection proxy (X, L)
+            # phi[t] was limited by omega_before_phase3[t].
+            # Phases 1&2 preserve omega (V6-e), so omega[t-1] ≈ omega_before_phase3[t].
             # Total PCE flux demand at each internal face
             # Φ_total[face] = Σ_{m,i} w[m] * phi[m,i,face,l]
             phi_total = (w[:, None, None, None] * phi_t).sum(axis=(0, 1))  # (X+1, L)
@@ -231,24 +233,32 @@ def run():
         ax.set_title('[V3-a] FVM Demand Flux \u03a8 \u2192 0 at Downstream Capacity')
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
-        # 图2: 时空 Hovmöller 图 (合并 B 类)
+        # 图2: 时空 Hovmöller 图 — PCE 密度, turbo 色图突出激波/稀疏波
         ax = axes[0, 1]
-        step_hov = max(1, T // 80)
+        step_hov = max(1, T // 100)
         rho_hov  = np.zeros((T // step_hov + 1, X))
         for ti, t in enumerate(range(0, T, step_hov)):
-            rm = hf['data/rho_macro'][t]    # (M, X, L)
-            rho_hov[ti] = (rm[0] + rm[1] + rm[2]).mean(axis=1)   # all classes, lane avg
+            om = hf['data/omega'][t]           # (X, L) PCE-weighted occupancy
+            rho_hov[ti] = om.mean(axis=1)      # lane avg
         t_axis = np.arange(0, T, step_hov) * dt
         im = ax.pcolormesh(np.arange(X), t_axis, rho_hov[:len(t_axis)],
-                           cmap='YlOrRd', vmin=0, vmax=rho_max)
-        plt.colorbar(im, ax=ax, label=r'$\bar{\rho}$ [veh/m]')
+                           cmap='turbo', vmin=0, vmax=rho_max)
+        cb = plt.colorbar(im, ax=ax, label=r'$\Omega$ [PCE/m]')
+        cb.set_ticks([0, rho_max * 0.25, rho_max * 0.5, rho_max * 0.75, rho_max])
+        cb.set_ticklabels(['0 (empty)', f'{rho_max*0.25:.3f}',
+                           f'{rho_max*0.5:.3f} (half)', f'{rho_max*0.75:.3f}',
+                           f'{rho_max:.3f} (jam)'])
         ax.set_xlabel('Cell x'); ax.set_ylabel('Time [s]')
-        ax.set_title('[V3-c/g] Hovmoller Space-Time Density — Ring Road\n'
-                     '(x=0 \u2194 x=149 adjacent; shock builds behind truck jam)')
-        ax.axvline(74, color='white', ls='--', lw=1, alpha=0.7)
-        ax.axvline(79, color='white', ls='--', lw=1, alpha=0.7)
-        ax.axvline(0,   color='cyan', ls=':', lw=1, alpha=0.6)
-        ax.axvline(X-1, color='cyan', ls=':', lw=1, alpha=0.6)
+        ax.set_title('[V3-c/g] Hovmoller \u03a9(x,t) — Ring Road\n'
+                     'Shock \u2190 (dark front leans left)  |  Rarefaction \u2192 (right fades)')
+        # Bottleneck zone
+        ax.axvline(74, color='white', ls='--', lw=1.2, alpha=0.85, label='Bottleneck x=74-79')
+        ax.axvline(79, color='white', ls='--', lw=1.2, alpha=0.85)
+        # Ring join markers
+        ax.axvline(0,   color='silver', ls=':', lw=1, alpha=0.7)
+        ax.axvline(X-1, color='silver', ls=':', lw=1, alpha=0.7)
+        ax.text(1,   t_axis[-1]*0.97, 'ring\njoin', color='silver', fontsize=6, va='top')
+        ax.text(X-2, t_axis[-1]*0.97, 'ring\njoin', color='silver', fontsize=6, va='top', ha='right')
 
         # 图3: 基本图 (B 类 Bf+Bs)
         ax = axes[1, 0]
@@ -276,8 +286,8 @@ def run():
                 ax.plot(np.arange(X), rho_m,
                         color=colors[m_idx], ls=styles[ti], lw=1.5,
                         label=f'{labels[m_idx]} t={t_snap*dt:.0f}s' if ti == 0 else '_')
-        ax.axvspan(74, 79, alpha=0.1, color='red', label='Class A Bottleneck')
-        ax.axvspan(59, 69, alpha=0.1, color='blue', label='Bf Injection')
+        ax.axvspan(74, 79, alpha=0.12, color='red', label='Truck Bottleneck')
+        ax.axvspan(0,  73, alpha=0.04, color='blue', label='Bf Upstream (uniform IC)')
         ax.set_xlabel('Cell x'); ax.set_ylabel(r'$\rho$ [veh/m]')
         ax.set_title('[V3] Three-class Density Snapshots\n(solid t=0, dash t=25s, dot t=50s)')
         ax.legend(fontsize=7, ncol=2); ax.grid(alpha=0.3)

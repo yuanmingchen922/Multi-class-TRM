@@ -93,8 +93,10 @@ def initialize_state():
     # Ω = 2.5 × 0.058 = 0.145 ≈ ρ_max  → extreme stiffness
     f[0, 0, 74:80, :] = 0.058
 
-    # Class Bf (free cars, m=1): injection at cells 59-69, max speed (i=14, v=30m/s)
-    f[1, 14, 59:70, :] = 0.060
+    # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
+    # Left half of ring = sustained free-flow state → classic Riemann problem setup.
+    # Estimated shock speed ≈ -4.6 m/s → shock travels ~58 cells in 250 s (clearly visible).
+    f[1, 14, 0:74, :] = 0.020
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0
@@ -572,7 +574,7 @@ def run(output_path):
         '3-phase Lie-Trotter: Capture/Release (P_block exact exp) -> '
         'Kinematics+Projection (Thomas) -> Advection (global Godunov). '
         'No lateral phase. Lanes independent. '
-        'Ring road (periodic BC): A bottleneck cells 74-79, Bf platoon cells 59-69. No external inflow.'
+        'Ring road (periodic BC): A bottleneck cells 74-79, Bf uniform upstream x=0-73 (rho=0.020, v=30m/s). No external inflow. Classic Riemann IC: left=free flow, right=sparse.'
     )
     hf.close()
 

@@ -1,3 +1,4 @@
+#m7
 \documentclass[11pt,a4paper]{article}
 
 \usepackage{amsmath}
@@ -13,194 +14,156 @@
 
 \begin{document}
 
-\title{Autonomous Multiclass TRM: Unified Spatial Kinematics and Isomorphic Moving Bottleneck Subclass Extension}
+\title{Autonomous Multiclass TRM: Spatial Aggregation, Probabilistic Moving Bottlenecks, and Riemann Benchmarks}
 \author{Mingchen Yuan}
 \date{}
 \maketitle
 
 \section{Introduction}
-This paper presents a complete 3D traffic flow model that combines basic traffic laws with a special extension for moving bottlenecks. It accurately models how heavy trucks can trap faster passenger cars. By using physics-based equations and a step-by-step calculation method, this model solves the complex problem of localized traffic jams smoothly, without crashing the computer simulation or creating unrealistic vehicle movements.
+This paper presents a unified 1D aggregated macroscopic traffic flow model that couples foundational fluid-dynamic conservation laws with a probabilistic subclass extension for moving bottlenecks. Following the principle of dimensionality reduction, we aggregate multi-lane dynamics into a cross-sectional continuum. By utilizing a physics-based probabilistic approximation, this model elegantly captures how heavy trucks trap faster passenger cars without relying on computationally expensive, rigid lane-by-lane topological constraints. The framework is strictly designed to satisfy absolute macroscopic benchmarks---including global mass conservation, non-negative densities, and strict jam density bounds---and reliably reproduces standard fluid-dynamic Riemann phenomena such as shockwaves and rarefaction waves, ensuring absolute stability for subsequent numerical simulations and gradient-based optimizations.
 
-\section{Universal State Variables and Isomorphic Subclasses}
-Let the highway be divided into $X$ cells $x\in\{1, \dots, X\}$ of length $\Delta x$, and parallel lanes $l\in\{1, \dots, L\}$. Vehicles travel at discrete speed levels $i \in \{1, \dots, N\}$, representing actual speeds $v_1 < v_2 < \dots < v_N$. 
+\section{Aggregated State Variables and Isomorphic Subclasses}
+Let the highway be discretized into $X$ longitudinal cells $x\in\{1, \dots, X\}$ of length $\Delta x$. By aggregating all lanes, the traffic flow is modeled across the entire cross-section. Vehicles travel at discrete speed levels $i \in \{1, \dots, N\}$, corresponding to physical speeds $v_1 < v_2 < \dots < v_N$. 
 
-To comprehensively model the moving bottleneck effect (where heavy trucks trap faster cars), we divide the traffic into three distinct groups ($m$):
+To phenomenologically capture the moving bottleneck effect without rigid micro-topological bounds, we partition the continuum into three distinct interacting subclasses ($m$):
 \begin{itemize}
     \item \textbf{Class A (Trucks):} Heavy vehicles with a free-flow speed limit of $v_A^{ff}$.
     \item \textbf{Class Bf (B-fast):} Freely flowing passenger cars.
-    \item \textbf{Class Bs (B-slow):} Passenger cars strictly trapped behind trucks.
+    \item \textbf{Class Bs (B-slow):} Passenger cars probabilistically trapped behind trucks.
 \end{itemize}
 
-To prevent vehicles from unrealistically overlapping in the simulation, the road's physical capacity limit $\rho_{\max}$ is governed by the \textbf{Effective Spatial Occupancy Density}. This is calculated using a size weight $w^{(m)}$ (Passenger Car Equivalent) for each vehicle type:
+To strictly prevent unphysical spatial overlapping, the absolute physical capacity limit $\rho_{\max}$ is governed by the \textbf{Effective Spatial Occupancy Density}, weighted by the dimensionless Passenger Car Equivalent (PCE) $w^{(m)}$:
 \begin{equation}
-\Omega_{x,l} = \sum_{m\in\{A,Bf,Bs\}}\sum_{i=1}^{N} w^{(m)} f_{i,x,l}^{(m)}
+\Omega_{x} = \sum_{m\in\{A,Bf,Bs\}}\sum_{i=1}^{N} w^{(m)} f_{i,x}^{(m)}
 \end{equation}
-where $w^{(Bf)} = w^{(Bs)} = w^{(B)}$. This ensures that a car's physical size remains exactly the same whether it is flowing freely or trapped.
+where $w^{(Bf)} = w^{(Bs)} = w^{(B)}$, ensuring that a passenger car's physical spatial footprint is strictly invariant regardless of its operational state.
 
-\subsection{Strict Rules for Trapped Cars}
-The highest speed index a truck can reach is $i_{thr} = \max\{i : v_i \le v_A^{ff}\}$. Both free cars ($Bf$) and trapped cars ($Bs$) exist across all speed levels $i \in \{1, \dots, N\}$. To mathematically simulate being "trapped," we apply two absolute rules exclusively to Class Bs:
+\subsection{Dynamic Asymmetric Kinematics for Trapped Cars}
+The maximum static speed index accessible to a truck is $i_{thr} = \max\{i : v_i \le v_A^{ff}\}$. Both free cars ($Bf$) and trapped cars ($Bs$) mathematically coexist across the entire velocity spectrum. Because lateral lane-changing is implicitly aggregated in this 1D continuum, we mathematically define the "trapped" state by enforcing an absolute asymmetric acceleration blockade exclusively upon Class Bs. 
 
-\textbf{1. Acceleration Blockade:} A trapped car is strictly forbidden from accelerating past the truck's speed limit. However, normal deceleration is still allowed:
+To prevent "ghost penetration" (where a trapped car unrealistically accelerates past a severely congested truck), this blockade dynamically tracks the local bottleneck. Let $\kappa_x(t) \le i_{thr}$ represent the \textbf{dynamic bottleneck speed limit} in cell $x$. To avoid numerical diffusion artifacts common in finite volume methods, we define this using an entity threshold $\epsilon_{veh} = 10^{-4}$:
 \begin{equation}
-\lambda_{i\rightarrow i+1}^{(Bs)} \equiv 0, \quad \forall i \ge i_{thr}
-\end{equation}
-
-\textbf{2. Absolute Lateral Immobilization:} By physical definition, a car is only trapped if it cannot escape to another lane. Therefore, all lateral lane-changing movements ($\gamma$) for trapped cars are frozen until they are officially released:
-\begin{equation}
-\gamma_{l\rightarrow l', i}^{(Bs)} \equiv 0, \quad \forall l, l'
-\end{equation}
-
-\section{Baseline Internal Kinematics and Lateral Dynamics}
-For normal, freely moving traffic (Class A and Bf, and for deceleration in Bs), speed changes only happen between adjacent speed levels ($|i-j|\le 1$). They cannot exceed the lowest or highest speed limits ($\lambda_{1\rightarrow 0} \equiv 0$, $\lambda_{N\rightarrow N+1} \equiv 0$). 
-
-\subsection{Acceleration and Deceleration ($\lambda$)}
-A vehicle's acceleration capability decreases as it approaches its maximum physical speed:
-\begin{equation}
-\lambda_{i\rightarrow i+1}^{(m)} = \alpha_{i}^{(m)}\left(1-\frac{v_{i}}{v_{\max}}\right)^{\eta^{(m)}} \left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x,l})}{R_{c}}\right)\right]
-\end{equation}
-
-To prevent vehicles from driving into a completely jammed road, deceleration is controlled by a strong \textbf{Singular Asymptotic Barrier} $\mathcal{B}(\Omega_{x,l})$. A tiny number $\epsilon \approx 10^{-8}$ is used to prevent the computer from dividing by zero:
-\begin{equation}
-\mathcal{B}(\Omega_{x,l}) = \left(\frac{\rho_{\max}}{\max(\epsilon,\rho_{\max}-\Omega_{x,l})}\right)^{\eta^{(m)}}
-\end{equation}
-\begin{equation}
-\lambda_{i\rightarrow i-1}^{(m)} = \left[ \omega_{0}^{(m)} + \sum_{n}\sum_{k<i}\beta_{i\rightarrow i-1}^{(m,n)}(v_{i}-v_{k}) \frac{w^{(n)} f_{k,x,l}^{(n)}}{\rho_{\max}} \right] \cdot \mathcal{B}(\Omega_{x,l})
-\end{equation}
-
-\subsection{Smooth Lane Changing ($\gamma$)}
-To keep the computer calculations stable and smooth without sudden jumps, the lane-changing rate uses a smooth mathematical curve (Softplus). It is based on the density difference $y=\frac{\Omega_{x,l}-\Omega_{x,l'}}{\rho_{\max}}$ between the current lane and the target lane:
-\begin{equation}
-\gamma_{l\rightarrow l',i}^{(m)} = \frac{\kappa^{(m)}}{\omega}\ln[1+\exp(\omega\cdot y)] \cdot \left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x,l'})}{R_{gap}}\right)\right]
-\end{equation}
-
-\section{Microscopic Reactions: Capture and Release}
-\subsection{Capture Rate: Becoming Trapped ($Bf \rightarrow Bs$)}
-A fast car becomes trapped only if it is blocked by trucks ahead while all adjacent escape lanes are full. First, we calculate the blocking effect of the trucks. The indicator function $\mathbf{1}_{v_i \ge v_k}$ guarantees that a car can only be captured by trucks moving slower than or equal to its own speed:
-\begin{equation}
-\mathcal{A}_{x,l}^{(i)} = \sum_{k \le i_{thr}} \mathbf{1}_{v_i \ge v_k} \left[ \omega_0^{(B,A)} + \beta^{(B,A)}(v_i - v_k) \right] \frac{w^{(A)} f_{k,x,l}^{(A)}}{\rho_{\max}}
-\end{equation}
-
-Next, we calculate the chance that the adjacent lane $l'$ is blocked. We use a strictly bounded curve ($\eta_{lat} > 0$) to ensure the value stays between 0 and 1. We also prevent cars from moving off the edge of the road ($G_{1 \to 0} \equiv 1, G_{L \to L+1} \equiv 1$):
-\begin{equation}
-G_{x,l\rightarrow l'} = \left( \frac{\min[\max(0, \Omega_{x,l'}), \rho_{\max}]}{\rho_{\max}} \right)^{\eta_{lat}}
-\end{equation}
-
-The Entrapment Factor $E_{x,l} = \prod_{l' \in \{l-1, l+1\}} G_{x,l\rightarrow l'}$ checks both adjacent lanes. A car is only captured if \textit{all} escape routes are blocked. The final capture rate strictly requires local blockage before it can be amplified by adjacent trucks:
-\begin{equation}
-\sigma_{x,l}^{(i)} = \sigma_0^{(B)} \cdot E_{x,l} \cdot \mathcal{A}_{x,l}^{(i)} \cdot \left[ 1 + \xi \sum_{l' \in \{l-1, l+1\}} \mathcal{A}_{x,l'}^{(i)} \right] \cdot \mathcal{B}(\Omega_{x,l})
-\end{equation}
-
-\subsection{Release Rate: Getting Free ($Bs \rightarrow Bf$)}
-A trapped car becomes free again if the truck cluster disperses or an adjacent lane opens up. Let $\mathcal{S}_{x,l} = \sum_{k \le i_{thr}} \frac{w^{(A)} f_{k,x,l}^{(A)}}{\rho_{\max}}$ be the local density of trucks. To prevent the model from rapidly switching a car between trapped and free states, the effective blocking pressure $\tilde{\mathcal{S}}$ structurally mirrors the capture logic:
-\begin{equation}
-\tilde{\mathcal{S}}_{x,l} = E_{x,l} \cdot \mathcal{S}_{x,l} \cdot \left[ 1 + \xi \sum_{l' \in \{l-1, l+1\}} \mathcal{S}_{x,l'} \right]
-\end{equation}
-\begin{equation}
-\mu_{x,l} = \mu_0^{(B)} \exp\left(-\frac{\tilde{\mathcal{S}}_{x,l}}{R_A}\right)
-\end{equation}
-\textit{Physical Axiom: If adjacent lanes become empty ($E \rightarrow 0$) or the trucks leave ($\mathcal{S} \rightarrow 0$), the blocking pressure disappears ($\tilde{\mathcal{S}} \rightarrow 0$). The release rate immediately jumps to its maximum $\mu_0^{(B)}$, and the car becomes free again.}
-
-\section{Forward Movement and Flux Limits}
-All vehicles move forward to the next cell at their actual instantaneous speed $v_i$. To prevent the computer from accidentally pushing too many cars into a full cell (which would crash the simulation), we use a global flux limiter $\alpha$. The continuous spatial demand to move forward is:
-\begin{equation}
-\Psi_{i,x\rightarrow x+1,l}^{(m)} = v_{i} f_{i,x,l}^{(m)} \cdot \left[1 - \exp\left(-\frac{\max(0, \rho_{\max} - \Omega_{x+1,l})}{R_{supply}}\right)\right]
-\end{equation}
-
-By defining the total equivalent spatial demand as $\mathcal{D}_{x\rightarrow x+1,l} = \frac{\Delta t}{\Delta x} \sum_{n, j} w^{(n)} \Psi_{j,x\rightarrow x+1,l}^{(n)}$, the limiter $\alpha$ restricts the flow if the demand exceeds the available space in the next cell:
-\begin{equation}
-\alpha_{x\rightarrow x+1,l} = 
+\kappa_x(t) = 
 \begin{cases} 
-1, & \text{if } \mathcal{D}_{x\rightarrow x+1,l} = 0 \\
-\min \left[ 1, \frac{\max(0, \rho_{\max} - \Omega_{x+1,l})}{\mathcal{D}_{x\rightarrow x+1,l}} \right], & \text{otherwise}
+\max\{k \in \{1, \dots, i_{thr}\} \mid f_{k,x}^{(A)} > \epsilon_{veh}\}, & \text{if } \sum_{k} f_{k,x}^{(A)} > \epsilon_{veh} \\ 
+i_{thr}, & \text{otherwise} 
 \end{cases}
 \end{equation}
-The final, safe amount of traffic moving forward is $\Phi_{i,x\rightarrow x+1,l}^{(m)} = \alpha_{x\rightarrow x+1,l} \cdot \Psi_{i,x\rightarrow x+1,l}^{(m)}$.
 
-\section{Unified Governing PDEs}
-To describe the traffic flow as a continuous fluid, we write the system as Partial Differential Equations (PDEs). The change in density over time ($\frac{\partial f}{\partial t}$) is balanced by the spatial traffic flow gradient ($\frac{\partial \Phi}{\partial x}$) and the internal state changes. We fully expand the equations to show exactly how vehicles change speeds ($\lambda$) and lanes ($\gamma$). Because the capture and release reactions happen at the exact same speed index $i$, no vehicles are accidentally created or destroyed.
+A trapped car is strictly forbidden from accelerating past the current actual physical speed of the truck cluster ahead of it, though normal deceleration towards zero is flawlessly preserved to respect background congestion:
+\begin{equation}
+\lambda_{i\rightarrow i+1}^{(Bs)} \equiv 0, \quad \forall i \ge \kappa_x(t)
+\end{equation}
 
-For Class A (Trucks), the PDE includes spatial movement, speed changes, and lane changes:
+\section{Baseline Internal Kinematics ($\lambda$)}
+For standard kinetic evolutions, velocity transitions strictly occur between adjacent states ($|i-j|\le 1$) with sealed boundary conditions ($\lambda_{1\rightarrow 0} \equiv 0$, $\lambda_{N\rightarrow N+1} \equiv 0$). 
+
+A vehicle's acceleration capability organically decays as it approaches its physical maximum speed, governed by a decay exponent $\delta^{(m)}$ and a base acceleration parameter $a_i^{(m)}$:
+\begin{equation}
+\lambda_{i\rightarrow i+1}^{(m)} = a_{i}^{(m)}\left(1-\frac{v_{i}}{v_{\max}}\right)^{\delta^{(m)}} \left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x})}{R_{c}}\right)\right]
+\end{equation}
+
+To rigorously prevent vehicles from colliding into a jammed downstream, deceleration is governed by a \textbf{Singular Asymptotic Barrier} $\mathcal{B}(\Omega_{x})$. A regularizer $\epsilon \approx 10^{-8}$ completely eradicates division-by-zero anomalies:
+\begin{equation}
+\mathcal{B}(\Omega_{x}) = \left(\frac{\rho_{\max}}{\max(\epsilon,\rho_{\max}-\Omega_{x})}\right)^{\eta^{(m)}}
+\end{equation}
+\begin{equation}
+\lambda_{i\rightarrow i-1}^{(m)} = \left[ \omega_{0}^{(m)} + \sum_{n}\sum_{k<i}\beta_{i\rightarrow i-1}^{(m,n)}(v_{i}-v_{k}) \frac{w^{(n)} f_{k,x}^{(n)}}{\rho_{\max}} \right] \cdot \mathcal{B}(\Omega_{x})
+\end{equation}
+
+\section{Macroscopic Probabilistic Reactions: Capture and Release}
+Rather than utilizing rigid topological blocking, we adopt a \textbf{Probabilistic Approximation}. The fundamental logic dictates: the macroscopic probability of a fast vehicle being trapped is strictly proportional to both its kinetic exposure to slower trucks and the overall macroscopic lack of overtaking opportunities.
+
+\subsection{Capture Rate: Probabilistic Entrapment ($Bf \rightarrow Bs$)}
+First, we evaluate the normalized kinetic exposure to downstream trucks. The indicator function $\mathbf{1}_{v_i \ge v_k}$ structurally guarantees that cars are only exposed to trucks operating at slower or equal speeds. \textit{(Note: Since $v_i, v_k$ are fixed speed coordinates, this indicator is a constant mask matrix, preserving the continuous differentiability of the state variables during numerical optimization)}:
+\begin{equation}
+\mathcal{A}_{x}^{(i)} = \sum_{k \le i_{thr}} \mathbf{1}_{v_i \ge v_k} \left[ \omega_0^{(B,A)} + \beta^{(B,A)}(v_i - v_k) \right] \frac{w^{(A)} f_{k,x}^{(A)}}{\rho_{\max}}
+\end{equation}
+
+Second, we define the \textbf{Probabilistic Blocking Factor} $P_{block}(x)$. This acts as the macroscopic statistical equivalent of blocked overtaking lanes. The probability of failed overtaking scales exponentially as the total spatial occupancy approaches the physical jam density:
+\begin{equation}
+P_{block}(x) = \left( \frac{\min[\max(0, \Omega_{x}), \rho_{\max}]}{\rho_{\max}} \right)^{\eta_{block}}
+\end{equation}
+\textit{Macro-Averaging Logic: If slow trucks account for a significant portion of capacity and overall congestion restricts passing maneuvers (e.g., 30\% of the road is occupied), fast cars face a proportional, mathematically continuous probability of failing to overtake, thereby transitioning into the trapped Bs state.}
+
+The total isomorphic capture rate mathematically multiplies these probabilities, amplified by the singular barrier near capacity limits:
+\begin{equation}
+\sigma_{x}^{(i)} = \sigma_0^{(B)} \cdot P_{block}(x) \cdot \mathcal{A}_{x}^{(i)} \cdot \mathcal{B}(\Omega_{x})
+\end{equation}
+
+\subsection{Release Rate: Dissipation of Bottlenecks ($Bs \rightarrow Bf$)}
+Release is the inverse thermodynamic process. Trapped cars organically recover their free-flow status as the localized truck cluster disperses or background congestion drops. Let the dimensionless local truck footprint be $\theta_{x}^{(A)} = \sum_{k \le i_{thr}} \frac{w^{(A)} f_{k,x}^{(A)}}{\rho_{\max}}$.
+
+To prevent high-frequency numerical chattering and ensure parameter consistency for numerical calibration algorithms, the effective bottleneck pressure $\tilde{\mathcal{S}}_x$ perfectly mirrors the capture logic and remains strictly dimensionless ($\tilde{\mathcal{S}}_x \in [0,1]$):
+\begin{equation}
+\tilde{\mathcal{S}}_x = P_{block}(x) \cdot \theta_{x}^{(A)}
+\end{equation}
+
+The release rate follows the exponential decay of this effective pressure, where $R_A$ operates purely as a dimensionless sensitivity scalar:
+\begin{equation}
+\mu_{x} = \mu_0^{(B)} \exp\left(-\frac{\tilde{\mathcal{S}}_{x}}{R_A}\right)
+\end{equation}
+\textit{Physical Axiom: If the trucks accelerate away ($\theta_{x}^{(A)} \rightarrow 0$) or the overall congestion clears enabling overtaking ($P_{block} \rightarrow 0$), the macroscopic blocking pressure instantly dissipates ($\tilde{\mathcal{S}}_x \rightarrow 0$). The release rate smoothly surges to its maximum $\mu_0^{(B)}$, organically freeing the trapped vehicles.}
+
+\section{Spatial Advection and Differentiable Godunov Limiter}
+All vehicles fundamentally advect forward at their actual instantaneous speed $v_i$. The raw continuous spatial demand flux is modeled as:
+\begin{equation}
+\Psi_{i,x\rightarrow x+1}^{(m)} = v_{i} f_{i,x}^{(m)} \cdot \left[1 - \exp\left(-\frac{\max(0, \rho_{\max} - \Omega_{x+1})}{R_{supply}}\right)\right]
+\end{equation}
+
+Evaluating continuous exponential filters within an explicit discrete time step $\Delta t$ inherently risks mass overshooting. To mathematically guarantee absolute physical boundedness without breaking computational graph continuity (crucial for future gradient-based numerical optimizations like Automatic Differentiation), we introduce a fully differentiable continuous Godunov flux limiter $\alpha$. Let the total spatial demand be $\mathcal{D}_{x\rightarrow x+1} = \frac{\Delta t}{\Delta x} \sum_{n, j} w^{(n)} \Psi_{j,x\rightarrow x+1}^{(n)}$. We integrate a regularized machine tolerance $\epsilon_{tol} \approx 10^{-12}$ to safely eliminate division-by-zero singularities without relying on non-differentiable \texttt{if-else} branches:
+\begin{equation}
+\alpha_{x\rightarrow x+1} = \min \left[ 1, \frac{\max(0, \rho_{\max} - \Omega_{x+1})}{\mathcal{D}_{x\rightarrow x+1} + \epsilon_{tol}} \right]
+\end{equation}
+The strictly bounded, non-negative Eulerian transfer flux is uniformly scaled: $\Phi_{i,x\rightarrow x+1}^{(m)} = \alpha_{x\rightarrow x+1} \cdot \Psi_{i,x\rightarrow x+1}^{(m)}$.
+
+\section{Unified 1D Governing PDEs}
+Because lanes are aggregated, the governing Partial Differential Equations strictly reduce to 1D space plus the discrete velocity spectrum. Capture and release reactions occur isomorphically at the exact speed index $i$.
+
+\textbf{Class A (Trucks):}
+\begin{equation}
+\frac{\partial f_{i,x}^{(A)}}{\partial t} + \frac{\partial \Phi_{i,x}^{(A)}}{\partial x} = \sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(A)} f_{j,x}^{(A)} - \lambda_{i\rightarrow j}^{(A)} f_{i,x}^{(A)} \right)
+\end{equation}
+
+\textbf{Class Bf (Free-flowing Cars):}
 \begin{equation}
 \begin{aligned}
-\frac{\partial f_{i,x,l}^{(A)}}{\partial t} + \frac{\partial \Phi_{i,x,l}^{(A)}}{\partial x} = 
-& \sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(A)} f_{j,x,l}^{(A)} - \lambda_{i\rightarrow j}^{(A)} f_{i,x,l}^{(A)} \right) \\
-& + \sum_{l'\in\{l-1,l+1\}} \left( \gamma_{l'\rightarrow l, i}^{(A)} f_{i,x,l'}^{(A)} - \gamma_{l\rightarrow l', i}^{(A)} f_{i,x,l}^{(A)} \right)
+\frac{\partial f_{i,x}^{(Bf)}}{\partial t} + \frac{\partial \Phi_{i,x}^{(Bf)}}{\partial x} &= 
+\sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(Bf)} f_{j,x}^{(Bf)} - \lambda_{i\rightarrow j}^{(Bf)} f_{i,x}^{(Bf)} \right) \\
+&\quad + \mu_{x} f_{i,x}^{(Bs)} - \sigma_{x}^{(i)} f_{i,x}^{(Bf)}
 \end{aligned}
 \end{equation}
 
-For Class Bf (Free-flowing Cars), the PDE adds the capture and release reactions. Cars gain density when released ($+\mu$) and lose density when captured ($-\sigma$):
+\textbf{Class Bs (Trapped Cars):}
 \begin{equation}
 \begin{aligned}
-\frac{\partial f_{i,x,l}^{(Bf)}}{\partial t} + \frac{\partial \Phi_{i,x,l}^{(Bf)}}{\partial x} = 
-& \sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(Bf)} f_{j,x,l}^{(Bf)} - \lambda_{i\rightarrow j}^{(Bf)} f_{i,x,l}^{(Bf)} \right) \\
-& + \sum_{l'\in\{l-1,l+1\}} \left( \gamma_{l'\rightarrow l, i}^{(Bf)} f_{i,x,l'}^{(Bf)} - \gamma_{l\rightarrow l', i}^{(Bf)} f_{i,x,l}^{(Bf)} \right) \\
-& + \mu_{x,l} f_{i,x,l}^{(Bs)} - \sigma_{x,l}^{(i)} f_{i,x,l}^{(Bf)}
+\frac{\partial f_{i,x}^{(Bs)}}{\partial t} + \frac{\partial \Phi_{i,x}^{(Bs)}}{\partial x} &= 
+\sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(Bs)} f_{j,x}^{(Bs)} - \lambda_{i\rightarrow j}^{(Bs)} f_{i,x}^{(Bs)} \right) \\
+&\quad + \sigma_{x}^{(i)} f_{i,x}^{(Bf)} - \mu_{x} f_{i,x}^{(Bs)}
 \end{aligned}
 \end{equation}
 
-For Class Bs (Trapped Cars), lane changing is strictly disabled. The PDE only includes spatial movement, constrained speed changes, and the capture/release reactions:
-\begin{equation}
-\begin{aligned}
-\frac{\partial f_{i,x,l}^{(Bs)}}{\partial t} + \frac{\partial \Phi_{i,x,l}^{(Bs)}}{\partial x} = 
-& \sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i}^{(Bs)} f_{j,x,l}^{(Bs)} - \lambda_{i\rightarrow j}^{(Bs)} f_{i,x,l}^{(Bs)} \right) \\
-& + \sigma_{x,l}^{(i)} f_{i,x,l}^{(Bf)} - \mu_{x,l} f_{i,x,l}^{(Bs)}
-\end{aligned}
-\end{equation}
-
-\section{Mathematical Proof of Global Mass Conservation}
-To guarantee the physical integrity of the model, we must rigorously prove that the introduction of the moving bottleneck subclasses (Bf and Bs) and their non-linear governing reactions do not violate the conservation of vehicles.
-
-\begin{theorem}[Global Mass Conservation for Class B]
-The total mass of Class B vehicles, defined as the spatial integration of both subclasses across all speed levels and lanes, is strictly conserved internally. Its temporal derivative is entirely determined by the net boundary fluxes.
+\section{Mathematical Proof of Absolute Macroscopic Benchmarks}
+\begin{theorem}[Strict Conservation and Positivity Bounds]
+The macroscopic PDE system and its discrete numerical mappings mathematically guarantee that: (1) Total global mass is unconditionally conserved; (2) All density states remain strictly non-negative given the Courant-Friedrichs-Lewy (CFL) constraint; (3) The physical jam density $\rho_{\max}$ is never exceeded.
 \end{theorem}
-
 \begin{proof}
-Let the total mass of Class B within the network be $P^{(B)}$:
-\begin{equation}
-P^{(B)} = \sum_{x=1}^{X}\sum_{l=1}^{L}\sum_{i=1}^{N} \left( f_{i,x,l}^{(Bf)} + f_{i,x,l}^{(Bs)} \right) \Delta x
-\end{equation}
+\textbf{1. Mass Conservation:} Summing the PDEs over the discrete velocity spectrum yields absolute zero-sum cancellations. The internal isomorphic reactions sum to zero: $\sum_i (\mu_x f_{i,x}^{(Bs)} - \sigma_x^{(i)} f_{i,x}^{(Bf)}) + \sum_i (\sigma_x^{(i)} f_{i,x}^{(Bf)} - \mu_x f_{i,x}^{(Bs)}) \equiv 0$. The tridiagonal internal speed changes perfectly cancel out. The temporal derivative reduces exclusively to the boundary spatial flux divergence, strictly satisfying the continuum mass conservation law.
 
-Taking the time derivative of $P^{(B)}$ and substituting the governing partial differential equations yields:
-\begin{equation}
-\frac{d P^{(B)}}{dt} = \sum_{x=1}^{X}\sum_{l=1}^{L}\sum_{i=1}^{N} \left( \frac{\partial f_{i,x,l}^{(Bf)}}{\partial t} + \frac{\partial f_{i,x,l}^{(Bs)}}{\partial t} \right) \Delta x
-\end{equation}
+\textbf{2. Positivity Preservation:} The analytical exponential integration used for reactions (Phase 1) structurally bounds components strictly above zero. In Phase 3, provided that the explicit integration strictly respects the \textbf{CFL condition} ($v_{\max} \frac{\Delta t}{\Delta x} \le 1$), the outward advective mass fraction never exceeds the available inventory in the source cell, mathematically guaranteeing $f_{i,x}^{(m)}(t+\Delta t) \ge 0$.
 
-We expand this by evaluating the four fundamental operators separately:
-
-\textbf{1. Capture and Release Reactions ($\sigma, \mu$):}
-The reaction terms occur within the exact same speed index $i$. Summing the reaction terms for Bf and Bs yields:
-\begin{equation}
-\sum_{i=1}^{N} \left[ \left( \mu_{x,l} f_{i,x,l}^{(Bs)} - \sigma_{x,l}^{(i)} f_{i,x,l}^{(Bf)} \right) + \left( \sigma_{x,l}^{(i)} f_{i,x,l}^{(Bf)} - \mu_{x,l} f_{i,x,l}^{(Bs)} \right) \right] = \sum_{i=1}^{N} 0 = 0
-\end{equation}
-This perfect algebraic cancellation proves that the transition between free and trapped states is a strictly zero-sum exchange.
-
-\textbf{2. Internal Speed Changes ($\lambda$):}
-Because speed transitions are tridiagonal and sealed by strict limits ($\lambda_{1\rightarrow 0} \equiv 0$ and $\lambda_{N\rightarrow N+1} \equiv 0$), the summation over all discrete speed indices perfectly cancels:
-\begin{equation}
-\sum_{i=1}^{N} \sum_{j\in\{i-1,i+1\}} \left( \lambda_{j\rightarrow i} f_{j} - \lambda_{i\rightarrow j} f_{i} \right) = 0
-\end{equation}
-
-\textbf{3. Lateral Lane-Changing ($\gamma$):}
-Similarly, symmetric lane transitions across all lanes $L$ cancel entirely due to the topological road boundaries ($G_{1 \rightarrow 0} \equiv 1$ and $G_{L \rightarrow L+1} \equiv 1$):
-\begin{equation}
-\sum_{l=1}^{L} \sum_{l'\in\{l-1,l+1\}} \left( \gamma_{l'\rightarrow l} f_{l'} - \gamma_{l\rightarrow l'} f_{l} \right) = 0
-\end{equation}
-
-\textbf{4. Spatial Advection ($\Phi$):}
-The spatial difference forms a telescoping sum across the longitudinal domain $X$:
-\begin{equation}
-\sum_{x=1}^{X} \left( \Phi_{i,x-1\rightarrow x} - \Phi_{i,x\rightarrow x+1} \right) = \Phi_{i,0\rightarrow 1} - \Phi_{i,X\rightarrow X+1}
-\end{equation}
-
-Therefore, all internal transition operators identically evaluate to zero. The time derivative of the total mass reduces exclusively to the net flow across the network's outer boundaries:
-\begin{equation}
-\frac{d P^{(B)}}{dt} = \sum_{l=1}^{L}\sum_{i=1}^{N} \left( \Phi_{i,0\rightarrow 1}^{(Bf)} + \Phi_{i,0\rightarrow 1}^{(Bs)} - \Phi_{i,X\rightarrow X+1}^{(Bf)} - \Phi_{i,X\rightarrow X+1}^{(Bs)} \right)
-\end{equation}
-This strictly guarantees that no vehicles are unphysically created or destroyed within the dynamic multidimensional system.
+\textbf{3. Jam Density Limit:} During the spatial advection update, the differentiable Godunov limiter $\alpha$ strictly truncates the total advection flux such that the integrated mass influx mathematically cannot exceed the remaining downstream void space $\max(0, \rho_{\max} - \Omega_{x+1})$. Therefore, $\Omega_x \le \rho_{\max}$ is permanently preserved.
 \end{proof}
 
-\section{Operator Splitting: The Calculation Sequence}
-To prevent "ghost penetration" (where trapped high-speed vehicles unphysically move past the slow truck before the computer can slow them down), we calculate the system in a strict, step-by-step sequence during each time step $\Delta t$:
+\section{Standard Traffic Scenarios: Riemann Problems Validation}
+To validate the model's hyperbolic fluid-dynamical integrity in subsequent numerical experiments, the formulation accurately resolves classical Riemann Problems without non-physical oscillations:
+\begin{itemize}
+    \item \textbf{Shockwave Generation (Traffic Jams):} Initializing upstream with free-flow states ($\Omega \ll \rho_{\max}$) and downstream with heavy congestion ($\Omega \to \rho_{\max}$). The Godunov limiter mathematically forces $\Phi \to 0$ at the interface. Simultaneously, $\mathcal{B}(\Omega_{x}) \to \infty$, triggering instant momentum thermalization ($\lambda_{i\to i-1} \to \infty$). This seamlessly creates a stable, backward-propagating shockwave that strictly satisfies macroscopic Rankine-Hugoniot jump conditions.
+    \item \textbf{Rarefaction Wave (Queue Discharge):} Initializing upstream with jammed states and downstream with free-flow states. As the downstream bottleneck clears, $\mathcal{B}(\Omega_x) \rightarrow 1$. The continuous acceleration operator ($\lambda_{i \to i+1}$) smoothly diffuses the leading edge of the platoon, correctly simulating a continuous fan-like expansion wave indicative of physical acceleration.
+\end{itemize}
+
+\section{Operator Splitting: Strict Causal Resolution}
+To evaluate the multiscale dynamics efficiently and prevent "ghost penetration" (where trapped cars advect past trucks before their speeds resolve), the system decouples into a strict 3-phase causal sequence per $\Delta t$:
 
 \begin{table}[h]
 \centering
@@ -209,29 +172,34 @@ To prevent "ghost penetration" (where trapped high-speed vehicles unphysically m
 \textbf{Phase} & \textbf{Operator} & \textbf{Stiffness} & \textbf{Numerical Solver} \\
 \midrule
 1 & Capture \& Release ($\sigma, \mu$) & \textbf{Extremely High} & Exact Analytical Matrix Exponential \\
-2 & Internal Speed Changes ($\lambda$) & \textbf{Extremely High}  & Dynamic Algebraic Projection + Thomas \\
-3 & Lateral Lane-Changing ($\gamma$) & Medium & Explicit Euler Integration \\
-4 & Spatial Advection ($\Phi$) & Low & Explicit Euler + Godunov Limiter \\
+2 & Internal Speed Changes ($\lambda$) & \textbf{Extremely High} & Dynamic Algebraic Projection + Thomas \\
+3 & Spatial Advection ($\Phi$) & Low & Explicit Euler + Differentiable Limiter \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Let intermediate states be denoted by $(*, **, ***)$.
+Let intermediate states be denoted by $(*, **)$. 
 
-\textbf{Phase 1: Exact Capture and Release ($t \rightarrow t^*$)} \\
-During this phase, cars do not move forward or change lanes, so the total density $\Omega_{x,l}$ is constant. This means the capture and release rates ($S^{(i)} = \sigma_{x,l}^{(i)} + \mu_{x,l}$) are also constant. To prevent the computer from failing if $S^{(i)} \to 0$, we use a safe mathematical function $\phi(z) = (1 - e^{-z})/z$. Let $F_{i,x,l} = f_{i,x,l}^{(Bf)}(t) + f_{i,x,l}^{(Bs)}(t)$ be the total cars at speed $i$. We can calculate the exact number of free and trapped cars instantly:
+\textbf{Phase 1: Analytical Capture \& Release ($t \rightarrow t^*$)} \\
+With advection frozen, $\Omega_x$ is invariant. The rate sum $S^{(i)} = \sigma_x^{(i)} + \mu_x$ is a constant scalar. To prevent IEEE 754 division-by-zero singularities when $S^{(i)} \to 0$, we utilize the entire mathematical function $\phi(z) = (1 - e^{-z})/z$ (evaluated securely via \texttt{-expm1(-z)/z}). Let $F_{i,x} = f_{i,x}^{(Bf)}(t) + f_{i,x}^{(Bs)}(t)$; the exact analytical update is evaluated efficiently without numerical truncation errors:
 \begin{equation}
-f_{i,x,l}^{(Bf), *} = f_{i,x,l}^{(Bf)}(t) \exp(-S^{(i)} \Delta t) + \mu_{x,l} F_{i,x,l} \Delta t \cdot \phi(S^{(i)} \Delta t)
+f_{i,x}^{(Bf), *} = f_{i,x}^{(Bf)}(t) \exp(-S^{(i)} \Delta t) + \mu_{x} F_{i,x} \Delta t \cdot \phi(S^{(i)} \Delta t)
 \end{equation}
 \begin{equation}
-f_{i,x,l}^{(Bs), *} = F_{i,x,l} - f_{i,x,l}^{(Bf), *}
+f_{i,x}^{(Bs), *} = F_{i,x} - f_{i,x}^{(Bf), *}
 \end{equation}
 
-\textbf{Phase 2: Instant Slowdown for Trapped Cars ($t^* \rightarrow t^{**}$)} \\
-If a fast car is captured in Phase 1, it must slow down immediately before it is allowed to move forward. Let $\kappa_{x,l}^* \le i_{thr}$ be the actual speed of the trucks currently in the cell. We instantly shift all trapped cars that are going too fast down to the truck's speed:
+\textbf{Phase 2: Instant Slowdown and Kinematics ($t^* \rightarrow t^{**}$)} \\
+Before allowing spatial advection, newly trapped fast cars must instantaneously drop to the dynamic bottleneck speed to avoid spatial penetration. Using the dynamic limit $\kappa_x(t)$ defined in Equation (2), an Exact Algebraic Projection collapses all over-speed trapped density:
 \begin{equation}
-f_{\kappa_{x,l}^*,x,l}^{(Bs), *} \leftarrow f_{\kappa_{x,l}^*,x,l}^{(Bs), *} + \sum_{j > \kappa_{x,l}^*} f_{j,x,l}^{(Bs), *} ; \quad f_{j,x,l}^{(Bs), *} \leftarrow 0 \quad (\forall j > \kappa_{x,l}^*)
+f_{\kappa_x(t),x}^{(Bs), *} \leftarrow f_{\kappa_x(t),x}^{(Bs), *} + \sum_{j > \kappa_x(t)} f_{j,x}^{(Bs), *} ; \quad f_{j,x}^{(Bs), *} \leftarrow 0 \quad (\forall j > \kappa_x(t))
 \end{equation}
-\textit{Why this is important:} This step completely empties the high-speed categories for trapped cars. This not only makes the computer's job much easier, but it also physically guarantees that trapped cars cannot unrealistically "jump" past the trucks in Phase 4. Because Phase 1 (Capture) and Phase 2 (Slowdown) happen \textit{before} Phase 4 (Forward Movement), trapped cars are safely slowed down before their positions are updated on the map. This perfectly simulates the moving bottleneck effect.
+Subsequently, the unconditionally stable implicit Thomas algorithm efficiently resolves the remaining regular kinematic transitions ($\lambda$). 
+
+\textbf{Phase 3: Spatial Advection ($t^{**} \rightarrow t+\Delta t$)} \\
+Because Phases 1 and 2 execute \textit{prior} to Phase 3, trapped vehicles are mathematically anchored to the moving bottleneck's actual velocity. Finally, applying the explicit upstream-formulated Godunov limiter, conditioned by the CFL requirement ($\frac{v_{\max}\Delta t}{\Delta x} \le 1$), guarantees that spatial density propagation rigorously obeys macroscopic physical limits:
+\begin{equation}
+f_{i,x}^{(m)}(t+\Delta t) = f_{i,x}^{(m), **} + \frac{\Delta t}{\Delta x} \left( \Phi_{i,x-1\rightarrow x}^{(m), **} - \Phi_{i,x\rightarrow x+1}^{(m), **} \right)
+\end{equation}
 
 \end{document}

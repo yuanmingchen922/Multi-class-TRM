@@ -33,24 +33,24 @@ PCE weights: $w^{(A)} = 2.5$, $w^{(B_f)} = w^{(B_s)} = 1.0$.
 
 ### Singular Barrier (Eq. 2)
 
-$$\mathcal{B}(\Omega_x) = \left(\frac{\rho_{\max}}{\max(\varepsilon,\, \rho_{\max} - \Omega_x)}\right)^{\eta^{(m)}}$$
+$$\mathcal{B}(\Omega_x) = \left(\frac{\rho_{\max}}{\max(\varepsilon,\; \rho_{\max} - \Omega_x)}\right)^{\eta^{(m)}}$$
 
 Prevents overcapacity: $\mathcal{B} \to \infty$ as $\Omega \to \rho_{\max}$.  
 Per-class exponents: $\eta^{(A)} = 4.5$, $\eta^{(B_f)} = \eta^{(B_s)} = 2.0$.
 
-### Probabilistic Blocking Factor (Eq. 8) ← *new in m7*
+### Probabilistic Blocking Factor (Eq. 8) — *new in m7*
 
-$$P_{\text{block}}(x) = \left(\frac{\operatorname{clip}(\Omega_x,\, 0,\, \rho_{\max})}{\rho_{\max}}\right)^{\eta_{\text{block}}}$$
+$$P_{\text{block}}(x) = \left(\frac{\text{clip}(\Omega_x,\; 0,\; \rho_{\max})}{\rho_{\max}}\right)^{\eta_{\text{block}}}$$
 
 Properties: $P_{\text{block}}(0) = 0$, $P_{\text{block}}(\rho_{\max}) = 1$, monotone non-decreasing.
 
 ### Kinematic Exposure (Eq. 7)
 
-$$A_x^{(i)} = \sum_{k \leq i_{\text{thr}}} \mathbf{1}[v_i \geq v_k]\,\bigl(\omega_0^{(B,A)} + \beta^{(B,A)}(v_i - v_k)\bigr)\,\frac{w^{(A)} f_{k,x}^{(A)}}{\rho_{\max}}$$
+$$A_x^{(i)} = \sum_{k \leq i_{\text{thr}}} \mathbf{1}[v_i \geq v_k] \left(\omega_0^{(B,A)} + \beta^{(B,A)}(v_i - v_k)\right) \frac{w^{(A)} f_{k,x}^{(A)}}{\rho_{\max}}$$
 
 ### Capture Rate (Eq. 9)
 
-$$\sigma_x^{(i)} = \sigma_0^{(B)}\, P_{\text{block}}(x)\, A_x^{(i)}\, \mathcal{B}(\Omega_x)$$
+$$\sigma_x^{(i)} = \sigma_0^{(B)} \cdot P_{\text{block}}(x) \cdot A_x^{(i)} \cdot \mathcal{B}(\Omega_x)$$
 
 ### Truck Footprint (Eq. 10)
 
@@ -58,31 +58,39 @@ $$\theta_x^{(A)} = \sum_{k \leq i_{\text{thr}}} \frac{w^{(A)} f_{k,x}^{(A)}}{\rh
 
 ### Effective Pressure (Eq. 11)
 
-$$\tilde{S}_x = P_{\text{block}}(x)\, \theta_x^{(A)}$$
+$$\tilde{S}_x = P_{\text{block}}(x) \cdot \theta_x^{(A)}$$
 
 ### Release Rate (Eq. 12)
 
-$$\mu_x = \mu_0^{(B)}\, \exp\!\left(-\frac{\tilde{S}_x}{R_A}\right)$$
+$$\mu_x = \mu_0^{(B)} \exp\!\left(-\frac{\tilde{S}_x}{R_A}\right)$$
 
 ### Exact Matrix Exponential — Phase 1
 
-For each cell and speed bin, the Bf ↔ Bs exchange is solved exactly:
+For each cell and speed bin, the Bf ↔ Bs exchange is solved exactly.
 
-$$f_{B_f}^{*} = f_{B_f}\,e^{-\sigma \Delta t} + \mu F\,\Delta t\,\varphi(\sigma \Delta t), \qquad f_{B_s}^{*} = F - f_{B_f}^{*}$$
+Let $F = f_{B_f} + f_{B_s}$ (total B mass) and $\varphi(z) = (1 - e^{-z})/z$ (safe at $z \to 0$: $\varphi \to 1$):
 
-where $F = f_{B_f} + f_{B_s}$ (total B mass) and $\varphi(z) = (1 - e^{-z})/z$ (safe at $z \to 0$: $\varphi \to 1$).
+$$f_{B_f}^{\ast} = f_{B_f} e^{-\sigma \Delta t} + \mu F \Delta t \,\varphi(\sigma \Delta t)$$
+
+$$f_{B_s}^{\ast} = F - f_{B_f}^{\ast}$$
 
 ### Bs Kinematic Blockade — Phase 2
 
-$$\lambda_{\text{acc}}^{(B_s)}[i \geq i_{\text{thr}}] = 0 \quad \text{(acceleration strictly forbidden above threshold speed bin)}$$
+$$\lambda_{\text{acc}}^{(B_s)}[i \geq i_{\text{thr}}] = 0$$
 
-Replaces the old lateral immobilization with a pure kinematic constraint.
+Acceleration strictly forbidden above threshold speed bin. Replaces the old lateral immobilization with a pure kinematic constraint.
 
 ### Global Godunov Flux Limiter — Phase 3
 
+Demand flux (supply-filtered):
+
+$$\Psi^{(m,i)} = v_i \, f^{(m,i)} \left(1 - e^{-(\rho_{\max} - \Omega)/R_{\text{supply}}}\right)$$
+
+Global limiter factor:
+
 $$\alpha = \min\!\left(1,\; \frac{\rho_{\max} - \Omega_{\text{downstream}}}{\sum_{m,i} w^{(m)} \Psi^{(m,i)} \cdot \Delta t / \Delta x}\right)$$
 
-$$\Phi^{(m,i)} = \alpha\, \Psi^{(m,i)}, \qquad \Psi^{(m,i)} = v_i\, f^{(m,i)}\,\bigl(1 - e^{-(\rho_{\max} - \Omega)/R_{\text{supply}}}\bigr)$$
+Final flux: $\Phi^{(m,i)} = \alpha \, \Psi^{(m,i)}$.
 
 ---
 
@@ -96,15 +104,15 @@ Two canonical Riemann problems are encoded in the benchmark and validated by exp
 
 **Mechanism**: $\Omega \to \rho_{\max}$ triggers $\mathcal{B} \to \infty$ and $P_{\text{block}} \to 1$; Bf is captured as Bs at maximum rate; the density jump propagates **backward** (Rankine-Hugoniot).
 
-**Check V3-c**: upstream $\omega(x = 68\text{–}73)$ increases from $t=0$ to $t=50\,\text{s}$ (positive delta confirms backward shock); complementary: $\rho_{B_s} > 0.001$ confirms capture at the shock front.
+**Check V3-c**: upstream $\Omega(x = 68\text{–}73)$ increases from $t=0$ to $t=50\,\text{s}$ (positive delta confirms backward shock); complementary: $\rho_{B_s} > 0.001$ confirms capture at the shock front.
 
 ### Rarefaction Wave — V3-g (congested upstream, free flow downstream)
 
 **Setup**: Downstream of the bottleneck (x = 80–110), traffic escapes into sparse space.
 
-**Mechanism**: $\Omega \ll \rho_{\max}$ downstream → $P_{\text{block}} \to 0$ → $\mu$ increases; Bs is slowly released to Bf; density fan expands **forward** smoothly (no sharp front).
+**Mechanism**: $\Omega \ll \rho_{\max}$ downstream $\Rightarrow$ $P_{\text{block}} \to 0$ $\Rightarrow$ $\mu$ increases; Bs is slowly released to Bf; density fan expands **forward** smoothly (no sharp front).
 
-**Check V3-g**: max cell-to-cell gradient $|\omega(x+1) - \omega(x)|$ for $x \in [80, 110]$ is $< 0.5\,\rho_{\max}$ (smooth fan); far-downstream $\rho_{B_s} \ll$ bottleneck $\rho_{B_s}$ (free flow confirmed, no trapping).
+**Check V3-g**: max cell-to-cell gradient $|\Omega(x+1) - \Omega(x)|$ for $x \in [80, 110]$ is $< 0.5\,\rho_{\max}$ (smooth fan); far-downstream $\rho_{B_s} \ll$ bottleneck $\rho_{B_s}$ (free flow confirmed, no trapping).
 
 ---
 

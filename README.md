@@ -40,7 +40,7 @@ Per-class exponents: $\eta^{(A)} = 4.5$, $\eta^{(B_f)} = \eta^{(B_s)} = 2.0$.
 
 ### Probabilistic Blocking Factor (Eq. 8) ← *new in m7*
 
-$$P_{\text{block}}(x) = \left(\frac{\operatorname{clip}(\Omega_x,\, 0,\, \rho_{\max})}{\rho_{\max}}\right)^{\eta_{\text{block}}}$$
+$$P_{block}(x) = \left( \frac{\min[\max(0, \Omega_{x}), \rho_{\max}]}{\rho_{\max}} \right)^{\eta_{block}}$$
 
 Properties: $P_{\text{block}}(0) = 0$, $P_{\text{block}}(\rho_{\max}) = 1$, monotone non-decreasing.
 
@@ -68,7 +68,7 @@ $$\mu_x = \mu_0^{(B)}\, \exp\!\left(-\frac{\tilde{S}_x}{R_A}\right)$$
 
 For each cell and speed bin, the Bf ↔ Bs exchange is solved exactly:
 
-$$f_{B_f}^{*} = f_{B_f}\,e^{-\sigma \Delta t} + \mu F\,\Delta t\,\varphi(\sigma \Delta t), \qquad f_{B_s}^{*} = F - f_{B_f}^{*}$$
+$$ff_{i,x}^{(Bf), *} = f_{i,x}^{(Bf)}(t) \exp(-S^{(i)} \Delta t) + \mu_{x} F_{i,x} \Delta t \cdot \phi(S^{(i)} \Delta t)$$
 
 where $F = f_{B_f} + f_{B_s}$ (total B mass) and $\varphi(z) = (1 - e^{-z})/z$ (safe at $z \to 0$: $\varphi \to 1$).
 

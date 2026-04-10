@@ -1,11 +1,11 @@
 {
   "total_checks": 41,
   "passed_checks": 41,
-  "total_elapsed_s": 3.27,
+  "total_elapsed_s": 3.24,
   "modules": {
     "V1": {
       "summary": "PASSED 5/5",
-      "elapsed_s": 0.25,
+      "elapsed_s": 0.26,
       "checks": {
         "V1-a": {
           "passed": true,
@@ -16,4 +16,207 @@
           "desc": "min(Ω) ≥ 0"
         },
         "V1-c": {
-          "passed": 
+          "passed": true,
+          "desc": "t=0 瓶颈 Ω ≈ 0.145 (Class A: 2.5×0.058)"
+        },
+        "V1-d": {
+          "passed": true,
+          "desc": "omega 与 eq.1 重算一致 < 1e-10"
+        },
+        "V1-e": {
+          "passed": true,
+          "desc": "w^(Bf) = w^(Bs) = 1.0  (Bf↔Bs 互换不改变 Ω)"
+        }
+      }
+    },
+    "V2": {
+      "summary": "PASSED 7/7",
+      "elapsed_s": 0.39,
+      "checks": {
+        "V2-a": {
+          "passed": true,
+          "desc": "λ_acc(Bf) 关于 Ω 单调递减且 Ω=ρ_max 时趋零"
+        },
+        "V2-b": {
+          "passed": true,
+          "desc": "λ_acc[m, N-1, x, l] = 0"
+        },
+        "V2-c": {
+          "passed": true,
+          "desc": "B(Ω=0.145)=(30)^4.5≈4.155e6 (η^(A)=4.5)"
+        },
+        "V2-d": {
+          "passed": true,
+          "desc": "λ_dec[m, 0, x, l] = 0"
+        },
+        "V2-e": {
+          "passed": true,
+          "desc": "Bf跟A/Bf跟Bf 碰撞率比 = β[1,0]·w[0]/(β[1,1]·w[1])=5.0"
+        },
+        "V2-f": {
+          "passed": true,
+          "desc": "ω₀>0 确保接近满载时 λ_dec>0"
+        },
+        "V2-g": {
+          "passed": true,
+          "desc": "λ_acc^(Bs)[i≥i_thr] = 0  (加速封锁)"
+        }
+      }
+    },
+    "V3": {
+      "summary": "PASSED 7/7",
+      "elapsed_s": 0.46,
+      "checks": {
+        "V3-a": {
+          "passed": true,
+          "desc": "Ψ 关于 Ω_downstream 单调递减且 Ω→ρ_max 时趋零"
+        },
+        "V3-b": {
+          "passed": true,
+          "desc": "min(f) ≥ 0 全时域"
+        },
+        "V3-c": {
+          "passed": true,
+          "desc": "Riemann I (Shock): upstream omega increases as shock propagates backward"
+        },
+        "V3-d": {
+          "passed": true,
+          "desc": "CFL = Δt·v_max/Δx ≤ 1"
+        },
+        "V3-e": {
+          "passed": true,
+          "desc": "全局 Godunov 限制器: α ≤ 1 (通量不超可用空间)"
+        },
+        "V3-f": {
+          "passed": true,
+          "desc": "合并B类 q-ρ 基本图有双模态分布"
+        },
+        "V3-g": {
+          "passed": true,
+          "desc": "Riemann II (Rarefaction): downstream profile smooth, far-downstream Bs << bottleneck Bs"
+        }
+      }
+    },
+    "V4": {
+      "summary": "PASSED 6/6",
+      "elapsed_s": 0.49,
+      "checks": {
+        "V4-a": {
+          "passed": true,
+          "desc": "P_block in [0,1] full domain (bounded blocking probability)"
+        },
+        "V4-b": {
+          "passed": true,
+          "desc": "P_block monotone non-decreasing in Omega (higher density = more blocking)"
+        },
+        "V4-c": {
+          "passed": true,
+          "desc": "P_block(Omega=0)=0 and P_block(Omega=rho_max)=1 (boundary conditions)"
+        },
+        "V4-d": {
+          "passed": true,
+          "desc": "sigma proportional to P_block: bottleneck zone > free zone"
+        },
+        "V4-e": {
+          "passed": true,
+          "desc": "HDF5 has P_block; no gamma_left/right/E_trap (lateral phase removed)"
+        },
+        "V4-f": {
+          "passed": true,
+          "desc": "Bs kinematic blockade: max(f^(Bs)[i>6]) = 0 all time"
+        }
+      }
+    },
+    "V5": {
+      "summary": "PASSED 6/6",
+      "elapsed_s": 0.57,
+      "checks": {
+        "V5-a": {
+          "passed": true,
+          "desc": "B 类 (Bf+Bs) 联合质量守恒误差 < 0.01"
+        },
+        "V5-b": {
+          "passed": true,
+          "desc": "Class A 质量守恒误差 < 0.01"
+        },
+        "V5-c": {
+          "passed": true,
+          "desc": "生成器诊断误差 max < 2e-2"
+        },
+        "V5-d": {
+          "passed": true,
+          "desc": "格子内 Σ_i f 变化量 ≈ 边界通量 (内部零和转移引理)"
+        },
+        "V5-e": {
+          "passed": true,
+          "desc": "Lane mass fractions stable (independent lanes, symmetric init)"
+        },
+        "V5-f": {
+          "passed": true,
+          "desc": "Phase 1 零和: Bf+Bs 联合守恒优于 Bf 单独守恒"
+        }
+      }
+    },
+    "V6": {
+      "summary": "PASSED 6/6",
+      "elapsed_s": 0.6,
+      "checks": {
+        "V6-a": {
+          "passed": true,
+          "desc": "S(t=0) = λ_dec_max / |μ_slow| >> 10^5 (极端刚性)"
+        },
+        "V6-b": {
+          "passed": true,
+          "desc": "τ_adv / τ_relax >> 1 (时间尺度严格分离)"
+        },
+        "V6-c": {
+          "passed": true,
+          "desc": "显式 Euler 发散 (>1.0), Thomas 稳定 (≤ρ_max)"
+        },
+        "V6-d": {
+          "passed": true,
+          "desc": "||(I-ΔtA)f_new - f_old||_inf < 1e-8"
+        },
+        "V6-e": {
+          "passed": true,
+          "desc": "d(Ω)/dt = Σ_m w^m Σ_i df/dt ≈ 0 (占用不变性引理)"
+        },
+        "V6-f": {
+          "passed": true,
+          "desc": "Phase 1 stability: phi safe, P_block in [0,1], f^(Bs)>=0 all time"
+        }
+      }
+    },
+    "V7": {
+      "summary": "PASSED 4/4",
+      "elapsed_s": 0.47,
+      "checks": {
+        "V7-a": {
+          "passed": true,
+          "desc": "phi(z) at z->0 and z->inf: no NaN/Inf, range [0,1]"
+        },
+        "V7-b": {
+          "passed": true,
+          "desc": "P_block(0)=0, P_block(rho_max)=1, monotone, HDF5 data in [0,1]"
+        },
+        "V7-c": {
+          "passed": true,
+          "desc": "max(f^(Bs)[i>6]) = 0 all time (blockade global invariant)"
+        },
+        "V7-d": {
+          "passed": true,
+          "desc": "sigma>=0, mu>=0 all time (physical conservation), Bf+Bs local conservation"
+        }
+      }
+    }
+  },
+  "claim_verdicts": {
+    "claim_1": true,
+    "claim_2": true,
+    "claim_3": true,
+    "claim_4": true,
+    "claim_5": true,
+    "claim_6": true,
+    "claim_7": true
+  }
+}

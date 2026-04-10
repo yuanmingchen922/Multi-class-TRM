@@ -12,11 +12,23 @@ V3 — FVM 空间通量与全局 Godunov 限制器验证  (m3+m4 升级版)
 """
 
 import os
+import platform
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
+
+# Font setup for Chinese text rendering in figures
+if platform.system() == 'Darwin':
+    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS',
+                                        'STHeiti', 'sans-serif']
+elif platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
+else:
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 BASE   = os.path.dirname(os.path.abspath(__file__))
 HDF5   = os.path.join(BASE, 'multiclass_trm_benchmark_500mb.h5')
@@ -76,29 +88,33 @@ def run():
         tag = PASS if passed_b else FAIL
         print(f"  [V3-b] {tag}  全局 min(f) = {min_f_global:.2e}")
 
-        # ── [V3-c] 激波可观测性 ──────────────────────────────────────────────
-        # 验证: t=0 时瓶颈区 (x=74-79) 比其上游 (x=60-73) 密度高
-        # (卡车瓶颈在 t=0 就已形成，下游相对稀疏)
-        rho_t0  = hf['data/rho_macro'][0]    # (M, X, L)
-        rho_t100 = hf['data/rho_macro'][min(100, T-1)]
-        rho_total_t0   = rho_t0.sum(axis=(0, 2))    # (X,): sum over M, mean-L→sum
-        rho_total_t100 = rho_t100.sum(axis=(0, 2))
-        # 激波验证: 在 t=0 瓶颈格子密度比 t=100 同一区域更高 (卡车堆积耗散后减少)
-        bott_t0   = float(rho_total_t0[74:80].mean())
-        bott_t100 = float(rho_total_t100[74:80].mean())
-        # 或验证: t=100 时 Bs 密度显著 > 0 (瓶颈已捕获 Bf → Bs)
+        # ── [V3-c] Riemann Problem I: Shock Wave (free flow upstream, congested downstream)
+        # Validation: shock propagates backward from bottleneck into upstream free flow.
+        # Expected: upstream density (x=68-73) increases over time as cars pile up
+        # behind the truck bottleneck at x=74-79 (backward-propagating shock).
+        rho_t0   = hf['data/rho_macro'][0]                   # (M, X, L)
+        rho_late = hf['data/rho_macro'][min(100, T-1)]       # (M, X, L)
+        omega_t0_arr   = hf['data/omega'][0]                  # (X, L)
+        omega_late_arr = hf['data/omega'][min(100, T-1)]      # (X, L)
+
+        upstream_omega_t0   = float(omega_t0_arr[68:74, :].mean())
+        upstream_omega_late = float(omega_late_arr[68:74, :].mean())
+        shock_delta         = upstream_omega_late - upstream_omega_t0   # >0 means buildup
+
         rho_Bs_t100 = float(hf['data/rho_macro'][min(100, T-1), 2, :, :].mean())
-        passed_c = bool(bott_t0 > 0.01 or rho_Bs_t100 > 0.001)   # 瓶颈形成或 Bs 捕获事件发生
+        passed_c = bool(shock_delta > 0.002 or rho_Bs_t100 > 0.001)
         results['checks']['V3-c'] = {
-            'desc': '激波形成验证 (瓶颈区有效占用 or Bs 捕获事件可观测)',
+            'desc': 'Riemann I (Shock): upstream omega increases as shock propagates backward',
             'passed': passed_c,
-            'bott_rho_t0':   bott_t0,
-            'bott_rho_t100': bott_t100,
-            'rho_Bs_t100':   rho_Bs_t100
+            'upstream_omega_t0':   upstream_omega_t0,
+            'upstream_omega_late': upstream_omega_late,
+            'shock_delta':         float(shock_delta),
+            'rho_Bs_late':         rho_Bs_t100
         }
         tag = PASS if passed_c else FAIL
-        print(f"  [V3-c] {tag}  瓶颈区 ρ(t=0)={bott_t0:.4f}, ρ(t=100)={bott_t100:.4f},"
-              f"  ρ_Bs(t=100)={rho_Bs_t100:.4f}")
+        print(f"  [V3-c] {tag}  Shock: upstream omega t0={upstream_omega_t0:.4f} -> "
+              f"late={upstream_omega_late:.4f} (delta={shock_delta:+.4f}), "
+              f"rho_Bs_late={rho_Bs_t100:.4f}")
 
         # ── [V3-d] CFL 验证 ─────────────────────────────────────────────────
         cfl = dt * v_max / dx
@@ -166,8 +182,37 @@ def run():
             'passed': passed_f, 'rho_std': float(rho_agg[mask_free].std()) if mask_free.sum() > 0 else 0
         }
         tag = PASS if passed_f else FAIL
-        print(f"  [V3-f] {tag}  B类密度标准差 = {results['checks']['V3-f']['rho_std']:.4f}"
-              f"  (> 0.005 = 双模态)")
+        print(f"  [V3-f] {tag}  Class B rho std = {results['checks']['V3-f']['rho_std']:.4f}"
+              f"  (> 0.005 = bimodal)")
+
+        # ── [V3-g] Riemann Problem II: Rarefaction Wave (congested upstream, free downstream)
+        # Validation: downstream of the bottleneck (x=80-110), the density profile at
+        # late time is smooth (no sharp front) — characteristic of a rarefaction fan.
+        # Also: Bs density far downstream should be near zero (free-flow, no trapping).
+        omega_late_down = omega_late_arr[80:111, :].mean(axis=1)   # (31,) lane-avg
+        max_gradient    = float(np.abs(np.diff(omega_late_down)).max())
+        # Smooth gradient: no cell-to-cell jump exceeds half rho_max
+        smooth_ok = max_gradient < rho_max * 0.5
+
+        rho_Bs_bott    = float(hf['data/rho_macro'][min(100, T-1), 2, 74:80, :].mean())
+        rho_Bs_fardown = float(hf['data/rho_macro'][min(100, T-1), 2, 90:110, :].mean())
+        # In rarefaction zone: far-downstream Bs << bottleneck Bs
+        # (cars downstream are in free flow; trapping is a near-bottleneck phenomenon)
+        raref_ok = (rho_Bs_bott > 1e-6 and
+                    rho_Bs_fardown < rho_Bs_bott * 0.5) or rho_Bs_bott < 1e-6
+
+        passed_g = smooth_ok and raref_ok
+        results['checks']['V3-g'] = {
+            'desc': 'Riemann II (Rarefaction): downstream profile smooth, far-downstream Bs << bottleneck Bs',
+            'passed': passed_g,
+            'max_gradient_downstream': float(max_gradient),
+            'smooth_threshold': float(rho_max * 0.5),
+            'rho_Bs_bottleneck': float(rho_Bs_bott),
+            'rho_Bs_far_downstream': float(rho_Bs_fardown)
+        }
+        tag = PASS if passed_g else FAIL
+        print(f"  [V3-g] {tag}  Rarefaction: max downstream gradient={max_gradient:.4f} "
+              f"(< {rho_max*0.5:.3f}), rho_Bs: bott={rho_Bs_bott:.4f} > fardown={rho_Bs_fardown:.4f}")
 
         # ═══════════ 图表 ═══════════════════════════════════════════════════
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -183,7 +228,7 @@ def run():
         ax.axvline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
         ax.set_xlabel(r'$\Omega_{x+1,l}$ [PCE/m]')
         ax.set_ylabel(r'$\Psi$ [veh/s]')
-        ax.set_title('[V3-a] FVM 需求通量 Ψ → 0 当下游满载')
+        ax.set_title('[V3-a] FVM Demand Flux \u03a8 \u2192 0 at Downstream Capacity')
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
         # 图2: 时空 Hovmöller 图 (合并 B 类)
@@ -197,8 +242,8 @@ def run():
         im = ax.pcolormesh(np.arange(X), t_axis, rho_hov[:len(t_axis)],
                            cmap='YlOrRd', vmin=0, vmax=rho_max)
         plt.colorbar(im, ax=ax, label=r'$\bar{\rho}$ [veh/m]')
-        ax.set_xlabel('空间格子 x'); ax.set_ylabel('时间 [s]')
-        ax.set_title('[V3-c] 时空密度图 Hovmöller（激波反向传播）')
+        ax.set_xlabel('Cell x'); ax.set_ylabel('Time [s]')
+        ax.set_title('[V3-c/g] Hovmoller Space-Time Density\n(Shock backward, Rarefaction forward)')
         ax.axvline(74, color='white', ls='--', lw=1, alpha=0.7)
         ax.axvline(79, color='white', ls='--', lw=1, alpha=0.7)
 
@@ -207,18 +252,18 @@ def run():
         thresh_fd = 0.03
         free_mask = rho_agg[mask_free] < thresh_fd
         ax.scatter(rho_agg[mask_free][free_mask],  q_agg[mask_free][free_mask],
-                   s=1, alpha=0.4, color='C0', label=f'自由流 (ρ<{thresh_fd})')
+                   s=1, alpha=0.4, color='C0', label=f'Free flow (\u03c1<{thresh_fd})')
         ax.scatter(rho_agg[mask_free][~free_mask], q_agg[mask_free][~free_mask],
-                   s=1, alpha=0.4, color='C3', label=f'拥堵区 (ρ≥{thresh_fd})')
+                   s=1, alpha=0.4, color='C3', label=f'Congested (\u03c1\u2265{thresh_fd})')
         ax.plot(omega_range, v_max * omega_range, 'k--', lw=1, alpha=0.5, label=r'$q=v_{\max}\rho$')
-        ax.set_xlabel(r'密度 $\rho$ [veh/m]'); ax.set_ylabel(r'流量 $q$ [veh/s]')
-        ax.set_title('[V3-f] B类(Bf+Bs) 基本图 — 双模态')
+        ax.set_xlabel(r'Density $\rho$ [veh/m]'); ax.set_ylabel(r'Flow $q$ [veh/s]')
+        ax.set_title('[V3-f] Class B (Bf+Bs) Fundamental Diagram \u2014 Bimodal')
         ax.legend(fontsize=9); ax.grid(alpha=0.3)
 
         # 图4: 三类密度空间快照 (t=0, 50, 100)
         ax = axes[1, 1]
         colors = ['C1', 'C0', 'C2']
-        labels = ['A(卡车)', 'Bf(自由车)', 'Bs(被困车)']
+        labels = ['A (Trucks)', 'Bf (Free)', 'Bs (Trapped)']
         t_snaps = [0, min(50, T-1), min(100, T-1)]
         styles  = ['-', '--', ':']
         for ti, t_snap in enumerate(t_snaps):
@@ -228,10 +273,10 @@ def run():
                 ax.plot(np.arange(X), rho_m,
                         color=colors[m_idx], ls=styles[ti], lw=1.5,
                         label=f'{labels[m_idx]} t={t_snap*dt:.0f}s' if ti == 0 else '_')
-        ax.axvspan(74, 79, alpha=0.1, color='red', label='A 瓶颈')
-        ax.axvspan(59, 69, alpha=0.1, color='blue', label='Bf 注入')
-        ax.set_xlabel('空间格子 x'); ax.set_ylabel(r'$\rho$ [veh/m]')
-        ax.set_title('[V3] 三类密度空间分布快照 (实线t=0, 虚线t=25s, 点t=50s)')
+        ax.axvspan(74, 79, alpha=0.1, color='red', label='Class A Bottleneck')
+        ax.axvspan(59, 69, alpha=0.1, color='blue', label='Bf Injection')
+        ax.set_xlabel('Cell x'); ax.set_ylabel(r'$\rho$ [veh/m]')
+        ax.set_title('[V3] Three-class Density Snapshots\n(solid t=0, dash t=25s, dot t=50s)')
         ax.legend(fontsize=7, ncol=2); ax.grid(alpha=0.3)
 
         plt.tight_layout()

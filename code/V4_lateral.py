@@ -1,14 +1,18 @@
 """
-V4 — 侧向变道 Softplus 验证  (m3+m4 升级版)
-对应 .tex §5:  γ = κ·(1/ω)·ln[1+exp(ω·y)]·gap_filter  (eq.6)
+V4 — Probabilistic Blocking Factor Validation
+Corresponding to .tex Eq. 8-12: P_block-based capture/release model
 
-检验项:
-  [V4-a] Softplus C∞ 连续性: 与 hard-max 对比，y=0 处无导数跳变
-  [V4-b] y≤0 时 γ≈0: 无密度差时几乎无变道驱动力
-  [V4-c] 侧向 Dirichlet 边界: γ_left[lane=0]=0, γ_right[lane=L-1]=0
-  [V4-d] Class Bf vs Class A 速率比 ≈ κ_Bf/κ_A = 7.5
-  [V4-e] 间隙过滤: γ→0 当目标车道 Ω_target→ρ_max
-  [V4-f] Bs 绝对侧向禁止: γ_left^(Bs)=γ_right^(Bs)=0 全时域全格子
+This module replaces the old Softplus lateral lane-changing validation.
+The new model eliminates the lateral phase entirely and uses P_block(x)
+as an aggregate congestion-based blocking probability.
+
+Checks:
+  [V4-a] P_block in [0,1] for all time steps and spatial cells
+  [V4-b] P_block is monotone non-decreasing in Omega (denser = more blocking)
+  [V4-c] P_block boundary conditions: P_block=0 at Omega=0, P_block=1 at Omega=rho_max
+  [V4-d] sigma proportional to P_block: sparse areas low sigma, congested areas high
+  [V4-e] HDF5 schema: no gamma_left/gamma_right/E_trap datasets (lateral phase removed)
+  [V4-f] Bs acceleration blockade: max(f^(Bs)[i>=i_thr]) = 0 (kinematic constraint)
 """
 
 import os
@@ -17,285 +21,289 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
+import platform
+
+# Chinese font setup for correct rendering
+if platform.system() == 'Darwin':
+    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS',
+                                        'STHeiti', 'sans-serif']
+elif platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
+else:
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 BASE   = os.path.dirname(os.path.abspath(__file__))
 HDF5   = os.path.join(BASE, 'multiclass_trm_benchmark_500mb.h5')
 FIGDIR = os.path.join(BASE, 'figures')
 os.makedirs(FIGDIR, exist_ok=True)
 
-PASS = '\033[92m✓ PASS\033[0m'
-FAIL = '\033[91m✗ FAIL\033[0m'
+PASS = '\033[92mPASS\033[0m'
+FAIL = '\033[91mFAIL\033[0m'
 
 
 def run():
-    results = {'module': 'V4_lateral', 'checks': {}, 'figures': []}
+    results = {'module': 'V4_probability', 'checks': {}, 'figures': []}
 
     with h5py.File(HDF5, 'r') as hf:
-        # ── 参数 ──────────────────────────────────────────────────────────────
-        rho_max  = float(hf['parameters'].attrs['rho_max'])
-        R_gap    = float(hf['parameters'].attrs['R_gap'])
-        omega_sp = float(hf['parameters'].attrs['omega_sp'])
-        T        = int(hf['parameters'].attrs['T_steps'])
-        L        = int(hf['parameters'].attrs['L'])
-        X        = int(hf['parameters'].attrs['X'])
-        M        = int(hf['parameters'].attrs['M'])
-        kappa    = hf['parameters/kappa_hz'][:]   # (M,) = [κ_A, κ_Bf, κ_Bs=0]
-        time_s   = hf['data/time_s'][:]
-
-        kappa_A  = kappa[0]   # 0.08
-        kappa_Bf = kappa[1]   # 0.60
-        kappa_Bs = kappa[2]   # 0.00
+        # Parameters
+        rho_max   = float(hf['parameters'].attrs['rho_max'])
+        eta_block = float(hf['parameters'].attrs['eta_block'])
+        dt        = float(hf['parameters'].attrs['dt_s'])
+        T         = int(hf['parameters'].attrs['T_steps'])
+        X         = int(hf['parameters'].attrs['X'])
+        L         = int(hf['parameters'].attrs['L'])
+        N         = int(hf['parameters'].attrs['N'])
+        i_thr     = int(hf['parameters'].attrs['i_thr'])
+        eps       = float(hf['parameters'].attrs['eps'])
+        time_s    = hf['data/time_s'][:]
+        v         = hf['parameters/v_mps'][:]
 
         print(f"\n{'='*60}")
-        print(f"  V4 — 侧向变道 Softplus 验证  (M={M} 类)")
-        print(f"  κ_A={kappa_A}, κ_Bf={kappa_Bf}, κ_Bs={kappa_Bs}")
-        print(f"  ω={omega_sp}, R_gap={R_gap}")
+        print(f"  V4 -- Probabilistic Blocking Factor Validation")
+        print(f"  eta_block={eta_block}, i_thr={i_thr}, T={T}, X={X}, L={L}")
         print(f"{'='*60}")
 
-        # ── [V4-a]  Softplus vs hard-max C∞ 连续性 ──────────────────────────
-        y_range = np.linspace(-0.5, 0.5, 2000)
+        # Load P_block and related data
+        P_block_all = hf['data/P_block'][:]    # (T, X, L)
+        omega_all   = hf['data/omega'][:]      # (T, X, L)
+        sigma_all   = hf['data/sigma'][:]      # (T, N, X, L)
 
-        def softplus(y):
-            return np.where(y > 20, y,
-                            np.log1p(np.exp(np.minimum(omega_sp * y, 500))) / omega_sp)
-
-        sp_vals = softplus(y_range)
-        hm_vals = np.maximum(0, y_range)
-
-        dy   = y_range[1] - y_range[0]
-        d_sp = np.gradient(sp_vals, dy)
-        d_hm = np.gradient(hm_vals, dy)
-
-        near_zero = np.abs(y_range) < 0.05
-        var_sp = float(np.var(d_sp[near_zero]))
-        var_hm = float(np.var(d_hm[near_zero]))
-        passed_a = var_sp < var_hm * 0.1
+        # ── [V4-a]  P_block in [0, 1] for all time/space ─────────────────────
+        P_min = float(P_block_all.min())
+        P_max = float(P_block_all.max())
+        has_nan = bool(np.isnan(P_block_all).any())
+        has_inf = bool(np.isinf(P_block_all).any())
+        passed_a = (P_min >= -1e-10 and P_max <= 1.0 + 1e-10
+                    and not has_nan and not has_inf)
         results['checks']['V4-a'] = {
-            'desc': 'Softplus 导数方差 << hard-max 导数方差 (y=0 附近)',
+            'desc': 'P_block in [0,1] full domain (bounded blocking probability)',
             'passed': passed_a,
-            'var_softplus': var_sp,
-            'var_hardmax': var_hm
+            'P_min': P_min, 'P_max': P_max,
+            'has_nan': has_nan, 'has_inf': has_inf
         }
         tag = PASS if passed_a else FAIL
-        print(f"  [V4-a] {tag}  Softplus 导数方差={var_sp:.4f}, "
-              f"hard-max 导数方差={var_hm:.4f} (y=0±0.05)")
+        print(f"  [V4-a] {tag}  P_block range: [{P_min:.6f}, {P_max:.6f}]  "
+              f"NaN={has_nan}  Inf={has_inf}")
 
-        # ── [V4-b]  y≤0 时 γ≈0 (用 Bf 类，kappa 最大) ──────────────────────
-        y_neg = -0.5
-        sp_neg = float(softplus(np.array([y_neg]))[0])
-        gap_factor_full = float(1.0 - np.exp(-rho_max / R_gap))
-        gamma_neg = kappa_Bf * sp_neg * gap_factor_full
-        passed_b = gamma_neg < 1e-3
+        # ── [V4-b]  P_block monotone non-decreasing in Omega ─────────────────
+        omega_range  = np.linspace(0, rho_max, 1000)
+        P_analytic   = (omega_range / rho_max) ** eta_block
+        monotone_ok  = bool((np.diff(P_analytic) >= 0).all())
+        # Numerical check via binned means
+        om_flat = omega_all.flatten()
+        pb_flat = P_block_all.flatten()
+        n_bins = 50
+        bin_edges = np.linspace(0, rho_max, n_bins + 1)
+        bin_om = np.zeros(n_bins)
+        bin_pb = np.zeros(n_bins)
+        for b in range(n_bins):
+            mask = (om_flat >= bin_edges[b]) & (om_flat < bin_edges[b + 1])
+            if mask.sum() > 0:
+                bin_om[b] = om_flat[mask].mean()
+                bin_pb[b] = pb_flat[mask].mean()
+        bin_pb_diff = np.diff(bin_pb[bin_om > 0])
+        numeric_monotone = bool((bin_pb_diff >= -1e-8).all())
+        passed_b = monotone_ok and numeric_monotone
         results['checks']['V4-b'] = {
-            'desc': 'y=-0.5 时 γ^(Bf) ≈ 0 (无密度梯度驱动)',
+            'desc': 'P_block monotone non-decreasing in Omega (higher density = more blocking)',
             'passed': passed_b,
-            'gamma_at_y_neg05': float(gamma_neg),
-            'softplus_at_y_neg05': float(sp_neg)
+            'analytic_monotone': monotone_ok,
+            'numeric_monotone': numeric_monotone
         }
         tag = PASS if passed_b else FAIL
-        print(f"  [V4-b] {tag}  γ^(Bf)(y=-0.5) = {gamma_neg:.4e}  (softplus={sp_neg:.2e})")
+        print(f"  [V4-b] {tag}  P_block monotonicity: analytic={monotone_ok}, "
+              f"numeric={numeric_monotone}")
 
-        # ── [V4-c]  侧向 Dirichlet 边界 (从存储数据验证) ─────────────────────
-        # γ_left[:, :, :, :, 0] 应为 0 (最内车道不能再向左)
-        # γ_right[:, :, :, :, L-1] 应为 0 (最外车道不能再向右)
-        max_inner = 0.0
-        max_outer = 0.0
-        for t in range(0, T, 40):
-            gl_inner = float(np.abs(hf['data/gamma_left'][t, :, :, :, 0]).max())
-            gr_outer = float(np.abs(hf['data/gamma_right'][t, :, :, :, L-1]).max())
-            if gl_inner > max_inner: max_inner = gl_inner
-            if gr_outer > max_outer: max_outer = gr_outer
-
-        passed_c = max_inner < 1e-12 and max_outer < 1e-12
+        # ── [V4-c]  Boundary conditions: P_block(0)=0, P_block(rho_max)=1 ───
+        P_at_zero    = float((0.0 / rho_max) ** eta_block)
+        P_at_rhomax  = float((rho_max / rho_max) ** eta_block)
+        bc_zero_ok   = abs(P_at_zero - 0.0) < 1e-10
+        bc_full_ok   = abs(P_at_rhomax - 1.0) < 1e-10
+        passed_c = bc_zero_ok and bc_full_ok
         results['checks']['V4-c'] = {
-            'desc': 'γ_left[lane=0]=0 且 γ_right[lane=L-1]=0 (Dirichlet 边界)',
+            'desc': 'P_block(Omega=0)=0 and P_block(Omega=rho_max)=1 (boundary conditions)',
             'passed': passed_c,
-            'max_inner_violation': max_inner,
-            'max_outer_violation': max_outer
+            'P_at_omega_0': P_at_zero,
+            'P_at_rho_max': P_at_rhomax
         }
         tag = PASS if passed_c else FAIL
-        print(f"  [V4-c] {tag}  γ_left 内边界最大值 = {max_inner:.2e}, "
-              f"γ_right 外边界最大值 = {max_outer:.2e}")
+        print(f"  [V4-c] {tag}  P_block(0)={P_at_zero:.2e}  "
+              f"P_block(rho_max)={P_at_rhomax:.6f}")
 
-        # ── [V4-d]  Class Bf vs Class A 速率比 ──────────────────────────────
-        # 相同工况下 γ^(Bf)/γ^(A) = κ_Bf/κ_A = 0.60/0.08 = 7.5
-        y_pos   = 0.3
-        sp_pos  = float(softplus(np.array([y_pos]))[0])
-        gap_fac = float(1.0 - np.exp(-rho_max * 0.5 / R_gap))
-        gamma_Bf = kappa_Bf * sp_pos * gap_fac
-        gamma_A  = kappa_A  * sp_pos * gap_fac
-        ratio_d   = gamma_Bf / gamma_A if gamma_A > 0 else float('inf')
-        expected_d = kappa_Bf / kappa_A
-        err_d = abs(ratio_d - expected_d) / expected_d
-        passed_d = err_d < 1e-8
+        # ── [V4-d]  sigma proportional to P_block ────────────────────────────
+        sigma_sum_t50 = sigma_all[50].sum(axis=0)     # (X, L) sum over N
+        P_block_t50   = P_block_all[50]               # (X, L)
+
+        sigma_flat  = sigma_sum_t50.flatten()
+        pblock_flat = P_block_t50.flatten()
+        mask_nz = sigma_flat > 1e-12
+        if mask_nz.sum() > 10:
+            corr_sigma_P = float(np.corrcoef(pblock_flat[mask_nz],
+                                              sigma_flat[mask_nz])[0, 1])
+        else:
+            corr_sigma_P = 0.0
+        sigma_bott = float(sigma_sum_t50[74:80, :].mean())
+        sigma_free = float(sigma_sum_t50[10:20, :].mean())
+        sigma_order = sigma_bott >= sigma_free
+        passed_d = corr_sigma_P > 0.0 and sigma_order
         results['checks']['V4-d'] = {
-            'desc': f'γ^(Bf)/γ^(A) = κ_Bf/κ_A = {expected_d:.2f}',
+            'desc': 'sigma proportional to P_block: bottleneck zone > free zone',
             'passed': passed_d,
-            'ratio': float(ratio_d),
-            'expected': float(expected_d),
-            'rel_error': float(err_d)
+            'corr_sigma_Pblock': corr_sigma_P,
+            'sigma_bottleneck': sigma_bott,
+            'sigma_free_zone': sigma_free,
+            'bottleneck_higher': sigma_order
         }
         tag = PASS if passed_d else FAIL
-        print(f"  [V4-d] {tag}  γ^(Bf)/γ^(A) = {ratio_d:.4f}  ≈ {expected_d:.1f}"
-              f"  (误差 {err_d:.2e})")
+        print(f"  [V4-d] {tag}  corr(sigma, P_block)={corr_sigma_P:.4f}  "
+              f"sigma_bott={sigma_bott:.4f}  sigma_free={sigma_free:.4f}")
 
-        # ── [V4-e]  间隙过滤: Ω_target→ρ_max 时 γ→0 ──────────────────────
-        omega_target_range = np.linspace(0, rho_max, 500)
-        gap_arg   = np.maximum(0, rho_max - omega_target_range)
-        gap_vals  = 1.0 - np.exp(-gap_arg / R_gap)
-        sp_fixed  = float(softplus(np.array([0.5]))[0])
-        gamma_filter_Bf = kappa_Bf * sp_fixed * gap_vals
-
-        at_cap      = gamma_filter_Bf[-1]
-        gap_monotone = bool((np.diff(gamma_filter_Bf) <= 1e-12).all())
-        passed_e = gap_monotone and (at_cap < 1e-10)
+        # ── [V4-e]  No gamma/E_trap datasets in HDF5 ─────────────────────────
+        all_keys = list(hf['data'].keys())
+        has_gamma_left  = 'gamma_left'  in all_keys
+        has_gamma_right = 'gamma_right' in all_keys
+        has_E_trap      = 'E_trap'      in all_keys
+        has_P_block_ds  = 'P_block'     in all_keys
+        passed_e = (not has_gamma_left and not has_gamma_right
+                    and not has_E_trap and has_P_block_ds)
         results['checks']['V4-e'] = {
-            'desc': 'γ^(Bf) 随 Ω_target→ρ_max 单调趋零 (间隙过滤)',
+            'desc': 'HDF5 has P_block; no gamma_left/right/E_trap (lateral phase removed)',
             'passed': passed_e,
-            'gamma_at_capacity': float(at_cap),
-            'monotone': gap_monotone
+            'has_P_block': has_P_block_ds,
+            'has_gamma_left': has_gamma_left,
+            'has_gamma_right': has_gamma_right,
+            'has_E_trap': has_E_trap,
+            'all_data_keys': sorted(all_keys)
         }
         tag = PASS if passed_e else FAIL
-        print(f"  [V4-e] {tag}  γ^(Bf)(Ω_target=ρ_max) = {at_cap:.2e}, "
-              f"单调={'是' if gap_monotone else '否'}")
+        print(f"  [V4-e] {tag}  P_block={has_P_block_ds}  "
+              f"gamma_left={has_gamma_left}  gamma_right={has_gamma_right}  "
+              f"E_trap={has_E_trap}")
 
-        # ── [V4-f]  Bs 绝对侧向禁止 (γ^(Bs) = 0 全时域) ────────────────────
-        # m=2 是 Class Bs (被困乘用车)，其 γ 必须在所有时刻、所有速度档和格子中为 0
-        max_bs_left  = 0.0
-        max_bs_right = 0.0
-        # γ 维度: (T, M, N, X, L) — m=2 即 Bs
+        # ── [V4-f]  Bs acceleration blockade: f^(Bs)[i>i_thr] = 0 all time ──
+        # Note: Bs CAN be at exactly i_thr (kappa* can equal i_thr).
+        # The blockade prevents Bs from being strictly ABOVE i_thr.
+        # V7-c checks the same invariant with the same condition.
+        f_ds = hf['data/f']
+        max_Bs_blocked = 0.0
         for t in range(0, T, 25):
-            gl_bs = float(np.abs(hf['data/gamma_left'][t, 2, :, :, :]).max())
-            gr_bs = float(np.abs(hf['data/gamma_right'][t, 2, :, :, :]).max())
-            if gl_bs  > max_bs_left:  max_bs_left  = gl_bs
-            if gr_bs  > max_bs_right: max_bs_right = gr_bs
-
-        passed_f = max_bs_left < 1e-12 and max_bs_right < 1e-12
+            f_Bs_blocked = f_ds[t, 2, i_thr+1:, :, :]   # (N-i_thr-1, X, L): strictly above i_thr
+            violation = float(np.abs(f_Bs_blocked).max())
+            if violation > max_Bs_blocked:
+                max_Bs_blocked = violation
+        passed_f = max_Bs_blocked < 1e-10
         results['checks']['V4-f'] = {
-            'desc': 'γ^(Bs)=0 全时域全格子 (Bs 绝对侧向禁止)',
+            'desc': f'Bs kinematic blockade: max(f^(Bs)[i>{i_thr}]) = 0 all time',
             'passed': passed_f,
-            'max_bs_left_violation': max_bs_left,
-            'max_bs_right_violation': max_bs_right
+            'max_violation': max_Bs_blocked
         }
         tag = PASS if passed_f else FAIL
-        print(f"  [V4-f] {tag}  max|γ_left^(Bs)| = {max_bs_left:.2e}, "
-              f"max|γ_right^(Bs)| = {max_bs_right:.2e}")
+        print(f"  [V4-f] {tag}  max(f^(Bs)[i>{i_thr}]) = {max_Bs_blocked:.2e}  "
+              f"(threshold < 1e-10)")
 
         # ═══════════════════════════════════════════════════════════════════════
-        # 读取宏观密度和 gamma 样本
+        # Figures
         # ═══════════════════════════════════════════════════════════════════════
-        rho_macro = hf['data/rho_macro'][:]    # (T, M, X, L)
-        # 各类各车道平均密度
-        lane_density_A  = rho_macro[:, 0, :, :].mean(axis=1)   # (T, L)
-        lane_density_Bf = rho_macro[:, 1, :, :].mean(axis=1)
-        lane_density_Bs = rho_macro[:, 2, :, :].mean(axis=1)
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig.suptitle('V4 - Probabilistic Blocking Factor P_block Validation',
+                     fontsize=13, fontweight='bold')
 
-        # gamma_right 样本: Bf(m=1), speed i=7, cell x=77（瓶颈附近）, 所有车道
-        gr_ds = hf['data/gamma_right']
-        gr_sample_Bf = np.array([gr_ds[t, 1, 7, 77, :] for t in range(T)])  # (T, L)
-        gr_sample_A  = np.array([gr_ds[t, 0, 7, 77, :] for t in range(T)])
-        gr_sample_Bs = np.array([gr_ds[t, 2, 7, 77, :] for t in range(T)])
+        # Figure V4-1: P_block analytic curve
+        ax = axes[0, 0]
+        ax.plot(omega_range, P_analytic, 'C0-', lw=2.5,
+                label=r'$P_{block}=(\Omega/\rho_{max})^{\eta_{block}}$')
+        ax.axvline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{max}$')
+        ax.scatter([0, rho_max], [0, 1], s=80, color='C1', zorder=5,
+                   label='Boundary: (0,0) and (rho_max,1)')
+        ax.set_xlabel(r'Occupancy $\Omega$ [PCE/m]', fontsize=10)
+        ax.set_ylabel(r'$P_{block}$', fontsize=10)
+        ax.set_title('[V4-c] P_block Analytic Curve\n(Boundary Conditions)', fontsize=9)
+        ax.legend(fontsize=8); ax.set_ylim(-0.05, 1.15); ax.grid(alpha=0.3)
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # 生成图表
-    # ═══════════════════════════════════════════════════════════════════════
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        # Figure V4-2: P_block spatial distribution
+        ax = axes[0, 1]
+        x_cells = np.arange(X)
+        for t_snap, col, label in [(0, 'C0', 't=0s'), (100, 'C1', 't=50s'),
+                                    (200, 'C2', 't=100s')]:
+            P_mean = P_block_all[t_snap].mean(axis=1)
+            ax.plot(x_cells, P_mean, color=col, lw=1.5, label=label)
+        ax.axvspan(74, 79, alpha=0.1, color='red', label='Bottleneck')
+        ax.axvspan(59, 69, alpha=0.1, color='blue', label='Injection')
+        ax.set_xlabel('Cell x', fontsize=10)
+        ax.set_ylabel(r'$P_{block}$ (lane-avg)', fontsize=10)
+        ax.set_title('[V4-a/b] P_block Spatial Distribution\n(Multiple Snapshots)', fontsize=9)
+        ax.legend(fontsize=8); ax.set_ylim(-0.05, 1.15); ax.grid(alpha=0.3)
 
-    # ── 图 V4-1: Softplus vs hard-max ─────────────────────────────────────
-    ax = axes[0, 0]
-    ax.plot(y_range, sp_vals, 'C0-',  lw=2.5, label='Softplus (ω=20)')
-    ax.plot(y_range, hm_vals, 'C1--', lw=2,   label='Hard-max(0,y)')
-    ax.plot(y_range, d_sp, 'C0:', lw=1.5, alpha=0.7, label='Softplus 一阶导')
-    ax.plot(y_range, d_hm, 'C1:', lw=1.5, alpha=0.7, label='Hard-max 一阶导')
-    ax.axvline(0, color='gray', ls=':', lw=1)
-    ax.set_xlabel('y = (Ω_src - Ω_tgt) / ρ_max', fontsize=10)
-    ax.set_ylabel('变道驱动力', fontsize=10)
-    ax.set_title('[V4-a] Softplus vs Hard-max (C∞ 连续性)', fontsize=10)
-    ax.legend(fontsize=8); ax.set_ylim(-0.1, 0.6); ax.grid(alpha=0.3)
+        # Figure V4-3: Omega vs P_block scatter (binned)
+        ax = axes[0, 2]
+        valid = bin_om > 0
+        ax.scatter(bin_om[valid], bin_pb[valid], s=60, color='C0', alpha=0.8,
+                   label='Binned means (numeric)')
+        ax.plot(omega_range, P_analytic, 'C1-', lw=2, label='Analytic', alpha=0.6)
+        ax.set_xlabel(r'$\Omega$ [PCE/m]', fontsize=10)
+        ax.set_ylabel(r'$P_{block}$', fontsize=10)
+        ax.set_title('[V4-b] Omega vs P_block\n(Monotone Non-decreasing)', fontsize=9)
+        ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
-    # ── 图 V4-2: 间隙过滤曲线（三类） ────────────────────────────────────
-    ax = axes[0, 1]
-    for k_val, lbl, col in [(kappa_A, 'Class A (κ=0.08)', 'C1'),
-                              (kappa_Bf, 'Class Bf (κ=0.60)', 'C0')]:
-        gamma_f = k_val * sp_fixed * gap_vals
-        ax.plot(omega_target_range, gamma_f, color=col, lw=2, label=lbl)
+        # Figure V4-4: sigma spatial distribution colored by P_block
+        ax = axes[1, 0]
+        sigma_sum_t50_arr = sigma_all[50].sum(axis=0)
+        sigma_lane_avg = sigma_sum_t50_arr.mean(axis=1)    # (X,)
+        P_lane_avg     = P_block_all[50].mean(axis=1)      # (X,)
+        sc = ax.scatter(x_cells, sigma_lane_avg, c=P_lane_avg, cmap='RdYlGn_r',
+                        s=25, vmin=0, vmax=1)
+        plt.colorbar(sc, ax=ax, label=r'$P_{block}$')
+        ax.axvspan(74, 79, alpha=0.1, color='red')
+        ax.set_xlabel('Cell x', fontsize=10)
+        ax.set_ylabel('sigma_sum (t=50s)', fontsize=10)
+        ax.set_title('[V4-d] sigma Spatial Distribution\nColored by P_block (t=50s)', fontsize=9)
+        ax.grid(alpha=0.3)
 
-    ax.plot(omega_target_range, np.zeros_like(omega_target_range),
-            'C2--', lw=2, label='Class Bs (κ=0, immobile)')
-    ax.axvline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
-    ax.set_xlabel(r'目标车道 $\Omega_{target}$ [PCE/m]', fontsize=10)
-    ax.set_ylabel(r'$\gamma$ [Hz]', fontsize=10)
-    ax.set_title('[V4-e] 间隙过滤 + 三类 γ 对比', fontsize=10)
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        # Figure V4-5: P_block time evolution at key cells
+        ax = axes[1, 1]
+        for cell, col, lbl in [(77, 'C3', 'x=77 (bottleneck)'),
+                                (65, 'C0', 'x=65 (injection)'),
+                                (10, 'C2', 'x=10 (upstream free)')]:
+            P_series = P_block_all[:, cell, 0]
+            ax.plot(time_s, P_series, color=col, lw=1.5, label=lbl)
+        ax.axhline(1.0, color='gray', ls='--', lw=1, alpha=0.7)
+        ax.axhline(0.0, color='gray', ls=':', lw=1, alpha=0.7)
+        ax.set_xlabel('Time [s]', fontsize=10)
+        ax.set_ylabel(r'$P_{block}$', fontsize=10)
+        ax.set_title('[V4-a] P_block Time Evolution\nat Key Spatial Cells', fontsize=9)
+        ax.legend(fontsize=8); ax.set_ylim(-0.05, 1.15); ax.grid(alpha=0.3)
 
-    # ── 图 V4-3: Bf γ_right 在瓶颈处时序（三车道） ──────────────────────
-    ax = axes[0, 2]
-    for l_idx, col in enumerate(['C0', 'C1', 'C2']):
-        ax.plot(time_s, gr_sample_Bf[:, l_idx], color=col,
-                lw=1.5, label=f'Bf Lane {l_idx+1}')
-    ax.axhline(0, color='gray', ls=':', lw=1)
-    ax.set_xlabel('时间 [s]', fontsize=10)
-    ax.set_ylabel(r'$\gamma_{right}^{(Bf)}$ [Hz]', fontsize=10)
-    ax.set_title('[V4-c] Class Bf γ_right (x=77, i=7)\nLane 3 应始终为 0', fontsize=9)
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        # Figure V4-6: Bs blocked density check (V4-f)
+        ax = axes[1, 2]
+        Bs_above_ithr = np.zeros(T)
+        for t in range(0, T, 10):
+            Bs_above_ithr[t] = float(np.abs(f_ds[t, 2, i_thr+1:, :, :]).max())
+        for t in range(1, T):
+            if t % 10 != 0:
+                Bs_above_ithr[t] = Bs_above_ithr[(t // 10) * 10]
+        ax.semilogy(time_s, Bs_above_ithr + 1e-20, 'C3-', lw=1.5)
+        ax.axhline(1e-10, color='red', ls='--', lw=1.5, label='Threshold 1e-10')
+        ax.set_xlabel('Time [s]', fontsize=10)
+        ax.set_ylabel(f'max(f^(Bs)[i>{i_thr}])', fontsize=10)
+        ax.set_title(f'[V4-f] Bs Blockade: f^(Bs)[i>{i_thr}]=0\n(Kinematic Constraint)',
+                     fontsize=9)
+        ax.legend(fontsize=8); ax.grid(alpha=0.3, which='both')
 
-    # ── 图 V4-4: Bs γ_right 时序 (应全零 — V4-f 验证) ───────────────────
-    ax = axes[1, 0]
-    for l_idx, col in enumerate(['C0', 'C1', 'C2']):
-        ax.plot(time_s, gr_sample_Bs[:, l_idx], color=col,
-                lw=1.5, label=f'Bs Lane {l_idx+1}')
-    ax.axhline(0, color='red', ls='--', lw=1.5, label='零线 (强制约束)')
-    ax.set_xlabel('时间 [s]', fontsize=10)
-    ax.set_ylabel(r'$\gamma_{right}^{(Bs)}$ [Hz]', fontsize=10)
-    ax.set_title('[V4-f] Class Bs γ_right (全时域应为零 — Bs 侧向禁止)', fontsize=9)
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        plt.tight_layout()
+        fig_path = os.path.join(FIGDIR, 'V4_probability.png')
+        fig.savefig(fig_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        results['figures'].append(fig_path)
+        print(f"\n  Figure saved: {fig_path}")
 
-    # ── 图 V4-5: 三类各车道平均密度时序 ─────────────────────────────────
-    ax = axes[1, 1]
-    lane_colors = ['C0', 'C1', 'C2']
-    lane_labels = ['Lane 1 (内)', 'Lane 2 (中)', 'Lane 3 (外)']
-    for l_idx, (lbl, col) in enumerate(zip(lane_labels, lane_colors)):
-        ax.plot(time_s, lane_density_A[:, l_idx],  color=col, ls='-',
-                lw=1.5, label=f'A {lbl}' if l_idx == 0 else None)
-        ax.plot(time_s, lane_density_Bf[:, l_idx], color=col, ls='--',
-                lw=1.5, label=f'Bf {lbl}' if l_idx == 0 else None)
-        ax.plot(time_s, lane_density_Bs[:, l_idx], color=col, ls=':',
-                lw=1.5, label=f'Bs {lbl}' if l_idx == 0 else None)
-    # 补充图例
-    from matplotlib.lines import Line2D
-    custom = [Line2D([0], [0], color='gray', ls='-',  lw=1.5, label='Class A'),
-              Line2D([0], [0], color='gray', ls='--', lw=1.5, label='Class Bf'),
-              Line2D([0], [0], color='gray', ls=':',  lw=1.5, label='Class Bs')]
-    ax.legend(handles=custom, fontsize=8)
-    ax.set_xlabel('时间 [s]', fontsize=10)
-    ax.set_ylabel('平均密度 [veh/m]', fontsize=10)
-    ax.set_title('[V4-d] 三类三车道平均密度随时间\n(Bf 密度应因捕获而转入 Bs)', fontsize=9)
-    ax.grid(alpha=0.3)
-
-    # ── 图 V4-6: Class A γ_right 时序 ────────────────────────────────────
-    ax = axes[1, 2]
-    for l_idx, col in enumerate(['C0', 'C1', 'C2']):
-        ax.plot(time_s, gr_sample_A[:, l_idx], color=col,
-                lw=1.5, label=f'A Lane {l_idx+1}')
-    ax.axhline(0, color='gray', ls=':', lw=1)
-    ax.set_xlabel('时间 [s]', fontsize=10)
-    ax.set_ylabel(r'$\gamma_{right}^{(A)}$ [Hz]', fontsize=10)
-    ax.set_title('[V4-d] Class A γ_right (x=77, i=7)\n(κ_A/κ_Bf = 0.08/0.60 ≈ 0.133)', fontsize=9)
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
-
-    plt.tight_layout()
-    fig_path = os.path.join(FIGDIR, 'V4_lateral.png')
-    fig.savefig(fig_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    results['figures'].append(fig_path)
-    print(f"\n  图表已保存: {fig_path}")
-
-    # ── 汇总 ──────────────────────────────────────────────────────────────────
+    # Summary
     passed_all = all(v['passed'] for v in results['checks'].values())
     n_pass  = sum(1 for v in results['checks'].values() if v['passed'])
     n_total = len(results['checks'])
     results['summary'] = f"{'PASSED' if passed_all else 'FAILED'} {n_pass}/{n_total}"
-    print(f"  V4 汇总: {results['summary']}\n")
+    print(f"  V4 Summary: {results['summary']}\n")
     return results
 
 

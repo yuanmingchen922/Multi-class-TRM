@@ -13,11 +13,23 @@ V2 — 动力学转换率验证  (m3+m4 升级版)
 """
 
 import os
+import platform
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
+
+# Font setup for Chinese text rendering in figures
+if platform.system() == 'Darwin':
+    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS',
+                                        'STHeiti', 'sans-serif']
+elif platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
+else:
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 BASE   = os.path.dirname(os.path.abspath(__file__))
 HDF5   = os.path.join(BASE, 'multiclass_trm_benchmark_500mb.h5')
@@ -174,7 +186,7 @@ def run():
                         label=f'{lbl}, {ilbl}m/s' if i_idx == 7 else '_')
         ax.axvline(rho_max, color='red', ls=':', label=r'$\rho_{\max}$')
         ax.set_xlabel(r'$\Omega$'); ax.set_ylabel(r'$\lambda_{acc}$ [Hz]')
-        ax.set_title('[V2-a,g] 加速率 λ_acc (逐类 η; Bs 封锁可见)')
+        ax.set_title('[V2-a,g] Acceleration Rate \u03bb_acc (per-class \u03b7; Bs blockade visible)')
         ax.legend(fontsize=7, ncol=2); ax.grid(alpha=0.3)
 
         # 图2: 奇异屏障 B(Ω)
@@ -183,11 +195,11 @@ def run():
         for m_idx, lbl, col in [(0,'A (η=4.5)','C1'), (1,'Bf (η=2.0)','C0')]:
             Bc = (rho_max / np.maximum(eps, rho_max - ob)) ** eta_m[m_idx]
             ax.semilogy(ob, Bc, color=col, lw=2, label=lbl)
-        ax.axvline(0.145, color='orange', ls='--', label='Ω=0.145 瓶颈')
+        ax.axvline(0.145, color='orange', ls='--', label='\u03a9=0.145 Bottleneck')
         ax.axhline(B_exp, color='green', ls=':', label=f'B_A={B_exp:.2e}')
         ax.scatter([0.145], [B_A], color='red', s=80, zorder=5)
         ax.set_xlabel(r'$\Omega$'); ax.set_ylabel(r'$\mathcal{B}(\Omega)$')
-        ax.set_title('[V2-c] 奇异屏障 B(Ω) = (ρ_max/max(ε,gap))^{η^(m)}')
+        ax.set_title('[V2-c] Singular Barrier B(\u03a9) = (\u03c1_max/max(\u03b5,gap))^{\u03b7^(m)}')
         ax.legend(fontsize=9); ax.grid(alpha=0.3, which='both')
 
         # 图3: t=0 λ_dec 空间分布 (三类)
@@ -197,9 +209,9 @@ def run():
             ld = ldec_t0[m_idx, i_plot, :, 0]
             ax.semilogy(np.arange(X), np.maximum(ld, 1e-6),
                         color=col, lw=1.5, label=lbl)
-        ax.axvspan(74, 79, alpha=0.15, color='red', label='A 瓶颈')
-        ax.set_xlabel('空间格子 x'); ax.set_ylabel(r'$\lambda_{dec}$ [Hz]')
-        ax.set_title('[V2-d] t=0 减速率空间分布（3类）')
+        ax.axvspan(74, 79, alpha=0.15, color='red', label='Class A Bottleneck')
+        ax.set_xlabel('Cell x'); ax.set_ylabel(r'$\lambda_{dec}$ [Hz]')
+        ax.set_title('[V2-d] t=0 Deceleration Rate Spatial Distribution (3 classes)')
         ax.legend(fontsize=9); ax.grid(alpha=0.3, which='both')
 
         # 图4: β 矩阵非对称 (Bf 跟 A vs Bf 跟 Bf, 含 /ρ_max)
@@ -210,12 +222,12 @@ def run():
         cb_A  = [beta[1,0] * dv * w[0] * f_k_val * pff for dv in dv_vals]
         cb_Bf = [beta[1,1] * dv * w[1] * f_k_val * pff for dv in dv_vals]
         xi2 = np.arange(len(dv_vals))
-        ax.bar(xi2 - 0.2, cb_Bf, width=0.35, color='C0', alpha=0.8, label='Bf 跟 Bf (β=0.03,w=1.0)')
-        ax.bar(xi2 + 0.2, cb_A,  width=0.35, color='C1', alpha=0.8, label='Bf 跟 A  (β=0.06,w=2.5)')
+        ax.bar(xi2 - 0.2, cb_Bf, width=0.35, color='C0', alpha=0.8, label='Bf following Bf (\u03b2=0.03,w=1.0)')
+        ax.bar(xi2 + 0.2, cb_A,  width=0.35, color='C1', alpha=0.8, label='Bf following A  (\u03b2=0.06,w=2.5)')
         ax.set_xticks(xi2[::2])
         ax.set_xticklabels([f'i={j+1}' for j in range(0, len(dv_vals), 2)], fontsize=8)
-        ax.set_xlabel('速度档 i (追车方 Bf)'); ax.set_ylabel(r'$\delta\lambda_{dec}$ [Hz]')
-        ax.set_title(f'[V2-e] β 非对称: 比率={exp_ratio:.1f}  (碰撞项含 /ρ_max)')
+        ax.set_xlabel('Speed bin i (following Bf)'); ax.set_ylabel(r'$\delta\lambda_{dec}$ [Hz]')
+        ax.set_title(f'[V2-e] \u03b2 Asymmetry: ratio={exp_ratio:.1f} (collision term with /\u03c1_max)')
         ax.legend(fontsize=9); ax.grid(alpha=0.3, axis='y')
 
         plt.tight_layout()

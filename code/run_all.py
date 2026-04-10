@@ -1,13 +1,29 @@
 """
-run_all.py — 主验证入口  (m3+m4 升级版)
-按顺序运行 V1-V7 全部验证模块，收集结果，打印汇总报告。
-最终判断 Autonomous Multiclass TRM m3+m4 (.tex) 各项核心命题的数值可靠性。
+run_all.py -- Main Validation Entry Point (P_block Version)
+Runs all V1-V7 validation modules in order, collects results, prints summary report.
+Final judgment on the numerical reliability of Autonomous Multiclass TRM m3+m4 (.tex)
+core research propositions. New: probabilistic blocking replaces Softplus lateral model.
 """
 
 import os
 import sys
 import time
 import json
+import numpy as np
+
+
+class _NumpyEncoder(json.JSONEncoder):
+    """Handle numpy scalars and booleans in JSON output."""
+    def default(self, obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        if isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        return super().default(obj)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
@@ -23,37 +39,37 @@ import V7_reactions
 # ── 研究可靠性判断标准 ─────────────────────────────────────────────────────────
 RESEARCH_CLAIMS = {
     'claim_1': {
-        'desc': 'Softplus 侧向变道优于 hard-max (C∞ 连续性)',
-        'checks': ['V4-a', 'V4-b', 'V4-e'],
+        'desc': 'P_block probabilistic blocking: bounded, monotone, and well-posed (Eq. 8)',
+        'checks': ['V4-a', 'V4-b', 'V4-c'],
         'module': 'V4'
     },
     'claim_2': {
-        'desc': '奇异屏障 B(Ω) 构成不可穿透容量上界',
+        'desc': 'Singular barrier B(Omega) forms impenetrable capacity upper bound',
         'checks': ['V2-c', 'V2-f', 'V1-a'],
         'module': 'V1+V2'
     },
     'claim_3': {
-        'desc': 'Lie-Trotter 4 相分裂 + Thomas 算法解决极端刚性',
+        'desc': 'Lie-Trotter 3-phase splitting + Thomas algorithm resolves extreme stiffness',
         'checks': ['V6-a', 'V6-c', 'V6-d', 'V6-f'],
         'module': 'V6'
     },
     'claim_4': {
-        'desc': '全局质量守恒定理 (Theorem 1)',
+        'desc': 'Global mass conservation theorem (Theorem 1)',
         'checks': ['V5-a', 'V5-b', 'V5-c', 'V5-d'],
         'module': 'V5'
     },
     'claim_5': {
-        'desc': 'FVM 正值性与激波有机形成 (全局 Godunov 限制器)',
+        'desc': 'FVM positivity and shockwave formation (global Godunov limiter)',
         'checks': ['V3-a', 'V3-b', 'V3-d', 'V3-e'],
         'module': 'V3'
     },
     'claim_6': {
-        'desc': '移动瓶颈捕获/释放守恒 (Phase 1 精确矩阵指数零和)',
+        'desc': 'Moving bottleneck capture/release conservation (Phase 1 exact matrix exp zero-sum)',
         'checks': ['V7-a', 'V7-b', 'V7-c', 'V7-d'],
         'module': 'V7'
     },
     'claim_7': {
-        'desc': 'Bs 约束系统: 加速封锁 + 绝对侧向禁止 (m3+m4 等构扩展)',
+        'desc': 'Bs constraint: kinematic acceleration blockade (i>=i_thr) replaces lateral phase',
         'checks': ['V2-g', 'V4-f', 'V7-c'],
         'module': 'V2+V4+V7'
     },
@@ -64,10 +80,10 @@ SEP = '=' * 68
 
 def run_all():
     print(f"\n{SEP}")
-    print("  Autonomous Multiclass TRM m3+m4 — 综合验证框架")
-    print("  对应: Multi-class_TRM.tex (m3+m4) + Benchmark Dataset.json")
-    print("  模块: V1 占用 | V2 运动学 | V3 FVM | V4 侧向")
-    print("        V5 质量守恒 | V6 刚性 | V7 捕获/释放反应")
+    print("  Autonomous Multiclass TRM m3+m4 -- Validation Framework (P_block)")
+    print("  Ref: Multi-class_TRM.tex (P_block version) + Benchmark Dataset.json")
+    print("  Modules: V1 Occupancy | V2 Kinematics | V3 FVM | V4 P_block")
+    print("           V5 Mass Cons | V6 Stiffness  | V7 Capture/Release")
     print(SEP)
 
     all_results = {}
@@ -167,7 +183,7 @@ def run_all():
             }
         }
     with open(summary_path, 'w', encoding='utf-8') as f:
-        json.dump(json_out, f, ensure_ascii=False, indent=2)
+        json.dump(json_out, f, ensure_ascii=False, indent=2, cls=_NumpyEncoder)
     print(f"\n  验证摘要已保存: {summary_path}")
 
     return json_out

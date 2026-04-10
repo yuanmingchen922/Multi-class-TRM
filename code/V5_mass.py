@@ -1,24 +1,36 @@
 """
-V5 — 质量守恒定理验证  (m3+m4 升级版)
-对应 .tex §7 定理1 + §9 引理 (Phase 3 占用不变性)
+V5 -- Mass Conservation Theorem Validation (3-phase P_block version)
+Corresponding to .tex Theorem 1: Global mass conservation under 3-phase splitting
 
-P^(m) = Σ_{x,l,i} f_{i,x,l}^(m) · Δx
+P^(m) = sum_{x,l,i} f_{i,x,l}^(m) * Delta_x
 
-检验项:
-  [V5-a] B 类 (Bf+Bs 联合) 质量变化 ≈ 边界通量 (Phase 1 为内部零和交换)
-  [V5-b] Class A (卡车) 质量变化 ≈ 边界通量
-  [V5-c] 相对守恒误差全时域 < 1e-2 量级
-  [V5-d] 格子内 Σ_i f 变化量 ≈ 边界通量 (内部零和转移引理)
-  [V5-e] 车道间质量重分配有界 (侧向内部取消近似)
-  [V5-f] Phase 1 零和交换: Δ(P_Bf) + Δ(P_Bs) ≈ 0 (捕获/释放不改变 B 总量)
+Checks:
+  [V5-a] B class (Bf+Bs combined) mass change ~ boundary flux (Phase 1 is internal zero-sum)
+  [V5-b] Class A (truck) mass change ~ boundary flux
+  [V5-c] Relative conservation error all time < 1e-2
+  [V5-d] Per-cell sum_i f change ~ boundary flux (internal zero-sum lemma)
+  [V5-e] Lane mass fractions stable (lanes are independent, equal distribution expected)
+  [V5-f] Phase 1 zero-sum: Delta(P_Bf) + Delta(P_Bs) ~ 0 (capture/release preserves B total)
 """
 
 import os
+import platform
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
+
+# Font setup for Chinese text rendering in figures
+if platform.system() == 'Darwin':
+    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS',
+                                        'STHeiti', 'sans-serif']
+elif platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
+else:
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 BASE   = os.path.dirname(os.path.abspath(__file__))
 HDF5   = os.path.join(BASE, 'multiclass_trm_benchmark_500mb.h5')
@@ -140,17 +152,20 @@ def run():
         tag = PASS if passed_d else FAIL
         print(f"  [V5-d] {tag}  瓶颈格子 Σ_i f^(A) 变化 vs 边界通量最大偏差 = {max_err_d:.2e}")
 
-        # ── [V5-e]  车道间质量重分配有界 ─────────────────────────────────────
+        # ── [V5-e]  Lane mass fractions stable (independent lanes, symmetric init) ──
+        # Since lanes are now fully independent 1D systems (no lateral phase),
+        # and initialization is symmetric across lanes, mass fractions stay equal.
         lane_frac      = f_all.sum(axis=(1, 2)).mean(axis=1)   # (T, L): sum M,N; mean X
         lane_frac_norm = lane_frac / (lane_frac.sum(axis=1, keepdims=True) + eps)
         std_lane_frac  = float(lane_frac_norm.std(axis=0).mean())
-        passed_e = std_lane_frac < 0.05
+        # Independent symmetric lanes: expect very low std (essentially 0)
+        passed_e = std_lane_frac < 1e-6
         results['checks']['V5-e'] = {
-            'desc': '车道间质量重分配有界 (侧向取消近似)',
+            'desc': 'Lane mass fractions stable (independent lanes, symmetric init)',
             'passed': passed_e, 'lane_fraction_std': float(std_lane_frac)
         }
         tag = PASS if passed_e else FAIL
-        print(f"  [V5-e] {tag}  车道占比标准差 = {std_lane_frac:.4f}  (阈值 < 0.05)")
+        print(f"  [V5-e] {tag}  Lane fraction std = {std_lane_frac:.6e}  (threshold < 1e-6)")
 
         # ── [V5-f]  Phase 1 零和交换验证 ─────────────────────────────────────
         # Phase 1 (capture/release): Bf → Bs 和 Bs → Bf 是守恒的
@@ -195,26 +210,26 @@ def run():
         ax.plot(time_s, P_mass[:, 1], 'C0-',  lw=2, label=r'Class Bf $P^{(Bf)}$')
         ax.plot(time_s, P_mass[:, 2], 'C2-',  lw=2, label=r'Class Bs $P^{(Bs)}$')
         ax.plot(time_s, P_B,          'k--',  lw=1.5, label=r'$P^{(Bf)}+P^{(Bs)}$')
-        ax.set_xlabel('时间 [s]', fontsize=10); ax.set_ylabel(r'$P^{(m)}$ [veh·m]', fontsize=10)
-        ax.set_title('[V5-a/b] 三类车辆总质量随时间\n(Bf+Bs 联合守恒)', fontsize=9)
+        ax.set_xlabel('Time [s]', fontsize=10); ax.set_ylabel(r'$P^{(m)}$ [veh$\cdot$m]', fontsize=10)
+        ax.set_title('[V5-a/b] Total Mass per Class over Time\n(Bf+Bs Joint Conservation)', fontsize=9)
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
         # ── 图 V5-2: B 类与 A 类质量守恒相对误差 ────────────────────────
         ax = axes[0, 1]
-        ax.semilogy(time_s[1:], rel_errors_B,  'C0-', lw=1.5, label='B(Bf+Bs) 误差')
-        ax.semilogy(time_s[1:], rel_errors_A,  'C1-', lw=1.5, label='Class A 误差')
-        ax.axhline(THRESHOLD, color='red', ls='--', lw=1.5, label=f'阈值 {THRESHOLD:.0e}')
-        ax.set_xlabel('时间 [s]', fontsize=10); ax.set_ylabel('相对质量守恒误差', fontsize=10)
-        ax.set_title('[V5-c] 质量守恒相对误差 (对数坐标)', fontsize=9)
+        ax.semilogy(time_s[1:], rel_errors_B,  'C0-', lw=1.5, label='B(Bf+Bs) error')
+        ax.semilogy(time_s[1:], rel_errors_A,  'C1-', lw=1.5, label='Class A error')
+        ax.axhline(THRESHOLD, color='red', ls='--', lw=1.5, label=f'Threshold {THRESHOLD:.0e}')
+        ax.set_xlabel('Time [s]', fontsize=10); ax.set_ylabel('Relative Mass Conservation Error', fontsize=10)
+        ax.set_title('[V5-c] Mass Conservation Relative Error (log scale)', fontsize=9)
         ax.legend(fontsize=8); ax.grid(alpha=0.3, which='both')
 
         # ── 图 V5-3: Phase 1 零和可视化（Bf vs Bs 质量互换） ─────────────
         ax = axes[0, 2]
         ax.plot(time_s, P_mass[:, 1], 'C0-',  lw=1.5, label=r'$P^{(Bf)}$')
         ax.plot(time_s, P_mass[:, 2], 'C2-',  lw=1.5, label=r'$P^{(Bs)}$')
-        ax.plot(time_s, P_B,          'k--',  lw=2,   label=r'$P^{(Bf)}+P^{(Bs)}$ (联合守恒)')
-        ax.set_xlabel('时间 [s]', fontsize=10); ax.set_ylabel(r'$P$ [veh·m]', fontsize=10)
-        ax.set_title('[V5-f] Phase 1 零和交换: Bf↔Bs 互换，B 总量守恒', fontsize=9)
+        ax.plot(time_s, P_B,          'k--',  lw=2,   label=r'$P^{(Bf)}+P^{(Bs)}$ (jointly conserved)')
+        ax.set_xlabel('Time [s]', fontsize=10); ax.set_ylabel(r'$P$ [veh$\cdot$m]', fontsize=10)
+        ax.set_title('[V5-f] Phase 1 Zero-sum: Bf\u21d4Bs Exchange, B Total Conserved', fontsize=9)
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
         # ── 图 V5-4: 瓶颈格子 Class A Σ_i f 时序（引理验证） ─────────────
@@ -223,28 +238,28 @@ def run():
                 label=r'$\Sigma_i f^{(A)}_{x=77,l=0}$')
         cum_flux = np.cumsum(expected_flux)
         ax.plot(time_s[1:], sum_bott_A[0] + cum_flux, 'k--', lw=1.5,
-                label='通量积分重建 (理论预期)')
-        ax.set_xlabel('时间 [s]', fontsize=10); ax.set_ylabel(r'$\Sigma_i f$ [veh/m]', fontsize=10)
-        ax.set_title('[V5-d] 瓶颈格子 Class A 总密度 (引理验证)', fontsize=9)
+                label='Flux-integrated reconstruction (theory)')
+        ax.set_xlabel('Time [s]', fontsize=10); ax.set_ylabel(r'$\Sigma_i f$ [veh/m]', fontsize=10)
+        ax.set_title('[V5-d] Bottleneck Cell Class A Total Density (Lemma Verification)', fontsize=9)
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
         # ── 图 V5-5: 三车道质量分配比例 ──────────────────────────────────
         ax = axes[1, 1]
         for l_idx, col in enumerate(['C0', 'C1', 'C2']):
             ax.plot(time_s, lane_frac_norm[:, l_idx], color=col,
-                    lw=1.5, label=f'Lane {l_idx+1} 占比')
-        ax.set_xlabel('时间 [s]', fontsize=10); ax.set_ylabel('车道质量占比', fontsize=10)
-        ax.set_title('[V5-e] 三车道质量分配比例 (侧向取消近似)', fontsize=9)
+                    lw=1.5, label=f'Lane {l_idx+1} fraction')
+        ax.set_xlabel('Time [s]', fontsize=10); ax.set_ylabel('Lane Mass Fraction', fontsize=10)
+        ax.set_title('[V5-e] Lane Mass Fractions (Independent Lanes, Symmetric Init)', fontsize=9)
         ax.legend(fontsize=8); ax.set_ylim(0, 0.6); ax.grid(alpha=0.3)
 
         # ── 图 V5-6: 生成器诊断误差时序 ──────────────────────────────────
         ax = axes[1, 2]
         ax.semilogy(time_s, mass_err_stored + 1e-16, 'C3-', lw=1.5,
-                    label='生成器诊断误差')
-        ax.axhline(THRESHOLD, color='red', ls='--', lw=1.5, label=f'阈值 {THRESHOLD:.0e}')
-        ax.set_xlabel('时间 [s]', fontsize=10)
-        ax.set_ylabel('相对误差 (对数)', fontsize=10)
-        ax.set_title('[V5-c] 生成器诊断质量误差时序', fontsize=9)
+                    label='Generator diagnostic error')
+        ax.axhline(THRESHOLD, color='red', ls='--', lw=1.5, label=f'Threshold {THRESHOLD:.0e}')
+        ax.set_xlabel('Time [s]', fontsize=10)
+        ax.set_ylabel('Relative Error (log scale)', fontsize=10)
+        ax.set_title('[V5-c] Generator Diagnostic Mass Error Time Series', fontsize=9)
         ax.legend(fontsize=8); ax.grid(alpha=0.3, which='both')
 
         plt.tight_layout()

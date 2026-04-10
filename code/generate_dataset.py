@@ -1,14 +1,17 @@
 """
-Autonomous Multiclass TRM — m3+m4 Unified Moving Bottleneck Extension
+Autonomous Multiclass TRM — m3+m4 Probabilistic Blocking Extension
 Dataset Generator
 Author: Mingchen Yuan
 
 3 classes: A (Trucks, m=0), Bf (Free Cars, m=1), Bs (Trapped Cars, m=2)
-4-phase Lie-Trotter operator splitting:
-  Phase 1: Exact Capture & Release  (analytical matrix exponential)
+3-phase Lie-Trotter operator splitting:
+  Phase 1: Exact Capture & Release  (analytical matrix exponential, P_block-based)
   Phase 2: Algebraic Projection + Implicit Kinematics  (Thomas algorithm)
-  Phase 3: Lateral Lane-Changing  (Softplus + explicit Euler, Bs frozen)
-  Phase 4: Spatial Advection  (FVM + global Godunov flux limiter)
+  Phase 3: Spatial Advection  (FVM + global Godunov flux limiter)
+
+NOTE: Lateral lane-changing (old Phase 3) is REMOVED.
+      Each lane is solved as an independent 1D system.
+      P_block(x) = (Omega/rho_max)^eta_block replaces E_trap/G escape gates.
 
 Strictly follows Multi-class_TRM.tex equations and Benchmark Dataset.json parameters.
 """
@@ -22,7 +25,7 @@ import os
 # PARAMETERS  (Benchmark Dataset.json)
 # ─────────────────────────────────────────────────────────────────────────────
 X       = 150        # spatial cells
-L       = 3          # lanes
+L       = 3          # lanes (independent 1D systems)
 N       = 15         # speed categories
 M       = 3          # vehicle classes: 0=A (truck), 1=Bf (free car), 2=Bs (trapped car)
 
@@ -38,9 +41,7 @@ v_max   = 30.0
 # Macroscopic capacity & filter parameters
 rho_max  = 0.15      # jam density [PCE/m]
 R_supply = 0.035     # advection filter [PCE/m]
-R_gap    = 0.025     # lateral gap filter [PCE/m]
 R_c      = 0.05      # acceleration relaxation [PCE/m]
-omega_sp = 20.0      # Softplus smoothing stiffness
 eps      = 1.0e-8    # regularizer
 
 # PCE weights: [A, Bf, Bs]  — Bf and Bs share same physical size
@@ -50,7 +51,6 @@ w = np.array([2.5, 1.0, 1.0], dtype=np.float64)
 alpha   = np.array([0.35, 1.50, 1.50], dtype=np.float64)  # base acceleration [Hz]
 eta_m   = np.array([4.5,  2.0,  2.0 ], dtype=np.float64)  # barrier stiffness exponent
 omega_0 = np.array([0.05, 0.01, 0.01], dtype=np.float64)  # spontaneous anticipation [Hz]
-kappa   = np.array([0.08, 0.60, 0.0 ], dtype=np.float64)  # lateral agility [Hz]; Bs=0
 
 # Beta kinetic collision kernel (3×3): beta[m, n]  (with /rho_max in deceleration)
 beta = np.array([
@@ -62,18 +62,17 @@ beta = np.array([
 # Moving bottleneck parameters
 v_A_ff     = 14.0   # truck free-flow speed limit [m/s] → i_thr = 6
 i_thr      = int(np.searchsorted(v, v_A_ff, side='right') - 1)  # = 6 (v[6]=14.0)
-eta_lat    = 2.0    # escape gate exponent
+eta_block  = 2.0    # probabilistic blocking exponent (Eq. 8)
 omega_0_BA = 0.05   # kinetic exposure spontaneous rate [Hz]
 beta_BA    = 0.06   # kinetic exposure rate [m^-1]
 sigma_0    = 0.5    # base capture rate [Hz]
 mu_0       = 0.3    # base release rate [Hz]
-xi         = 0.5    # lateral awareness weight
 R_A        = 0.05   # truck dispersal scale [PCE/m]
 
-# CFL validation (Phase 4)
+# CFL validation (Phase 3)
 cfl = dt * v_max / dx
 assert cfl <= 1.0, f"CFL violated: {cfl:.4f} > 1.0"
-print(f"CFL = {cfl:.4f}  ✓   i_thr = {i_thr}  (v[i_thr]={v[i_thr]} m/s ≤ v_A_ff={v_A_ff})")
+print(f"CFL = {cfl:.4f}  OK   i_thr = {i_thr}  (v[i_thr]={v[i_thr]} m/s <= v_A_ff={v_A_ff})")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER: effective occupancy  Ω_{x,l} = Σ_m Σ_i w^(m) f_{i,x,l}^(m)  (eq.1)
@@ -113,100 +112,85 @@ def safe_phi(z):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PHASE 1 — Exact Capture & Release  (analytical matrix exponential)
+# PHASE 1 — Exact Capture & Release  (P_block-based, analytical matrix exponential)
 # ─────────────────────────────────────────────────────────────────────────────
 def phase1_capture_release(f, omega):
     """
-    Implements Phase 1: Bf ↔ Bs reactions at the SAME speed index i.
+    Implements Phase 1: Bf <-> Bs reactions at the SAME speed index i.
 
-    Kinetic exposure A^(i)_{x,l}  (eq.8):
-      A[i,x,l] = Σ_{k≤i_thr} 1_{v_i≥v_k} · (ω_0_BA + β_BA·(v_i−v_k)) · w^(A)·f^(A)_{k} / ρ_max
+    Probabilistic Blocking Factor P_block(x)  (eq.8):
+      P_block = (clip(Omega, 0, rho_max) / rho_max) ^ eta_block
 
-    Escape gate G_{x,l→l'}  (eq.9):
-      G = (Ω_{x,l'} / ρ_max)^{η_lat};  boundary G = 1
+    Kinetic exposure A^(i)_{x,l}  (eq.7):
+      A[i,x,l] = sum_{k<=i_thr} 1_{v_i>=v_k} * (omega_0_BA + beta_BA*(v_i-v_k))
+                 * w^(A)*f^(A)_{k} / rho_max
 
-    Entrapment factor E = G_left · G_right
+    Capture rate sigma^(i)  (eq.9):
+      sigma = sigma_0 * P_block * A^(i) * B(Omega)   [no E_trap, no xi]
 
-    Capture rate σ^(i)  (eq.10):
-      σ = σ_0 · E · A^(i) · [1 + ξ · Σ_{l'} A^(i)_{x,l'}] · B(Ω)
+    Truck footprint theta_A  (eq.10):
+      theta_A = sum_{k<=i_thr} w^(A)*f^(A)_{k} / rho_max
 
-    Release rate μ  (eq.11-12):
-      S̃ = E · S · [1 + ξ · Σ_{l'} S_{x,l'}];  μ = μ_0 · exp(−S̃/R_A)
+    Effective bottleneck pressure S_tilde  (eq.11):
+      S_tilde = P_block * theta_A
 
-    Exact integration (eq.18-19):
+    Release rate mu  (eq.12):
+      mu = mu_0 * exp(-S_tilde / R_A)
+
+    Exact integration:
       F = f_Bf + f_Bs
-      f_Bf* = f_Bf·exp(−S·dt) + μ·F·dt·φ(S·dt)
-      f_Bs* = F − f_Bf*
+      f_Bf* = f_Bf*exp(-S*dt) + mu*F*dt*phi(S*dt)
+      f_Bs* = F - f_Bf*
 
-    Returns: f_new, sigma (N,X,L), mu (X,L), E_trap (X,L)
+    Returns: f_new, sigma (N,X,L), mu (X,L), P_block (X,L)
     """
     f_new = f.copy()
 
-    # ── Kinetic exposure A^(i)_{x,l}  (eq.8) ────────────────────────────────
+    # ── Probabilistic Blocking Factor P_block  (eq.8) ────────────────────────
+    omega_norm = np.clip(omega, 0.0, rho_max) / rho_max        # (X, L) in [0,1]
+    P_block    = omega_norm ** eta_block                        # (X, L) in [0,1]
+
+    # ── Kinetic exposure A^(i)_{x,l}  (eq.7) ─────────────────────────────────
     # indicator[i, k] = 1 if v[i] >= v[k],  k = 0..i_thr
     indicator = (v[:, None] >= v[None, :i_thr + 1]).astype(np.float64)  # (N, i_thr+1)
     # Speed difference term: max(0, v_i - v_k)
     speed_diff = np.maximum(0.0, v[:, None] - v[None, :i_thr + 1])       # (N, i_thr+1)
     # Weight per (i, k) pair
     weight_ik = indicator * (omega_0_BA + beta_BA * speed_diff)           # (N, i_thr+1)
-    # Weighted truck density per speed k: w^(A) * f^(A)_k / ρ_max
+    # Weighted truck density per speed k: w^(A) * f^(A)_k / rho_max
     fA_trucks = w[0] * f[0, :i_thr + 1, :, :] / rho_max                  # (i_thr+1, X, L)
-    # A[i, x, l] = Σ_k weight_ik[i,k] * fA_trucks[k,x,l]
+    # A[i, x, l] = sum_k weight_ik[i,k] * fA_trucks[k,x,l]
     A_exposure = np.einsum('ik,kxl->ixl', weight_ik, fA_trucks)          # (N, X, L)
 
-    # Lateral sum of A (adjacent lane pressure term)
-    A_lat_sum = np.zeros((N, X, L), dtype=np.float64)
-    A_lat_sum[:, :, 1:]  += A_exposure[:, :, :-1]   # from left neighbor
-    A_lat_sum[:, :, :-1] += A_exposure[:, :, 1:]    # from right neighbor
-
-    # ── Escape gate G  (eq.9) ────────────────────────────────────────────────
-    # G_{x,l→l'} = (clip(Ω_{x,l'}, 0, ρ_max) / ρ_max)^{η_lat}
-    omega_norm = np.clip(omega, 0.0, rho_max) / rho_max    # (X, L) in [0,1]
-
-    # G_right[x, l] = G_{x,l→l+1}: for l=0..L-2 use omega_norm[:, 1:]
-    # Boundary: G_right[x, L-1] = 1 (no right neighbor → treat as fully blocked)
-    G_right = np.ones((X, L), dtype=np.float64)
-    G_right[:, :L - 1] = omega_norm[:, 1:] ** eta_lat
-
-    # G_left[x, l] = G_{x,l→l-1}: for l=1..L-1 use omega_norm[:, :-1]
-    # Boundary: G_left[x, 0] = 1 (no left neighbor → fully blocked)
-    G_left = np.ones((X, L), dtype=np.float64)
-    G_left[:, 1:] = omega_norm[:, :-1] ** eta_lat
-
-    # Entrapment factor E_{x,l} = G_left · G_right  ∈ [0,1]
-    E_trap = G_left * G_right                                              # (X, L)
-
-    # ── Singular barrier for Bf (η^(Bf) = eta_m[1])  (eq.4) ─────────────────
+    # ── Singular barrier for Bf (eta^(Bf) = eta_m[1])  (eq.4) ───────────────
     pressure_Bf = (rho_max / np.maximum(eps, rho_max - omega)
                    ) ** eta_m[1]                                           # (X, L)
 
-    # ── Capture rate σ^(i)_{x,l}  (eq.10) ───────────────────────────────────
+    # ── Capture rate sigma^(i)_{x,l}  (eq.9) ─────────────────────────────────
+    # sigma = sigma_0 * P_block * A^(i) * B(Omega)   [no E_trap, no xi]
     sigma = (sigma_0
-             * E_trap[None, :, :]
+             * P_block[None, :, :]
              * A_exposure
-             * (1.0 + xi * A_lat_sum)
              * pressure_Bf[None, :, :])                                    # (N, X, L)
     sigma = np.maximum(sigma, 0.0)
 
-    # ── Truck presence S_{x,l}  (eq.11) ─────────────────────────────────────
-    S_truck = (w[0] * f[0, :i_thr + 1, :, :] / rho_max).sum(axis=0)      # (X, L)
-    S_lat_sum = np.zeros((X, L), dtype=np.float64)
-    S_lat_sum[:, 1:]  += S_truck[:, :-1]
-    S_lat_sum[:, :-1] += S_truck[:, 1:]
+    # ── Truck footprint theta_A  (eq.10) ─────────────────────────────────────
+    theta_A = (w[0] * f[0, :i_thr + 1, :, :] / rho_max).sum(axis=0)      # (X, L)
 
-    S_tilde = E_trap * S_truck * (1.0 + xi * S_lat_sum)                   # (X, L)
+    # ── Effective bottleneck pressure S_tilde  (eq.11) ───────────────────────
+    S_tilde = P_block * theta_A                                            # (X, L)
 
-    # ── Release rate μ_{x,l}  (eq.12) ───────────────────────────────────────
+    # ── Release rate mu_{x,l}  (eq.12) ──────────────────────────────────────
     mu = mu_0 * np.exp(-S_tilde / R_A)                                    # (X, L)
 
-    # ── Exact matrix exponential integration  (eq.18-19) ────────────────────
-    # Total reaction rate per (i, x, l): S^(i) = σ^(i) + μ
+    # ── Exact matrix exponential integration ─────────────────────────────────
+    # Total reaction rate per (i, x, l): S^(i) = sigma^(i) + mu
     S_total = sigma + mu[None, :, :]                                       # (N, X, L)
 
     # Total B cars at speed i: F = f_Bf + f_Bs
     F_total = f[1] + f[2]                                                  # (N, X, L)
 
-    # φ(S·dt) safe at S→0
+    # phi(S*dt) safe at S->0
     phi_z = safe_phi(S_total * dt)                                         # (N, X, L)
 
     # Exact update
@@ -217,7 +201,7 @@ def phase1_capture_release(f, omega):
     f_new[1] = np.maximum(f_new[1], 0.0)
     f_new[2] = np.maximum(f_new[2], 0.0)
 
-    return f_new, sigma, mu, E_trap
+    return f_new, sigma, mu, P_block
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,16 +209,16 @@ def phase1_capture_release(f, omega):
 # ─────────────────────────────────────────────────────────────────────────────
 def phase2_kinematics(f, omega):
     """
-    Step A — Algebraic projection for Bs  (eq.20):
-      Find κ*_{x,l} = highest i ≤ i_thr where f^(A)[i,x,l] > 0
-      Move all f^(Bs)[j > κ*] to f^(Bs)[κ*], zero out j > κ*
+    Step A — Algebraic projection for Bs:
+      Find kappa*_{x,l} = highest i <= i_thr where f^(A)[i,x,l] > 0
+      Move all f^(Bs)[j > kappa*] to f^(Bs)[kappa*], zero out j > kappa*
 
     Step B — Semi-implicit Thomas for all 3 classes:
-      λ_acc  (eq.3):  uses η^(m) per-class  (not global η)
-      λ_dec  (eq.4-5): includes /ρ_max normalization in collision term
-      Bs constraints: λ_acc^(Bs)[i ≥ i_thr] = 0  (Acceleration Blockade)
+      lambda_acc  (eq.3):  uses eta^(m) per-class
+      lambda_dec  (eq.4-5): includes /rho_max normalization in collision term
+      Bs constraints: lambda_acc^(Bs)[i >= i_thr] = 0  (Acceleration Blockade)
 
-    Returns: f, lambda_acc (M,N,X,L), lambda_dec (M,N,X,L)
+    Returns: f, lambda_acc (M,N,X,L), lambda_dec (M,N,X,L), kappa_star (X,L)
     """
     f_new = f.copy()
 
@@ -242,34 +226,34 @@ def phase2_kinematics(f, omega):
     thresh = 1.0e-10
     truck_present = f[0, :i_thr + 1, :, :] > thresh              # (i_thr+1, X, L)
 
-    # κ* = highest i ≤ i_thr where truck is present
-    # Flip speed axis, argmax finds first True from high end
+    # kappa* = highest i <= i_thr where truck is present
     truck_flipped = truck_present[::-1, :, :]                     # (i_thr+1, X, L)
     argmax_flip   = np.argmax(truck_flipped, axis=0)              # (X, L)
     kappa_star    = i_thr - argmax_flip                            # (X, L)
+
     any_truck     = truck_present.any(axis=0)                     # (X, L)
     kappa_star    = np.where(any_truck, kappa_star, 0)            # default 0 if no trucks
 
-    # Mask for speed indices above κ*: high_mask[i, x, l] = (i > κ*[x,l])
+    # Mask for speed indices above kappa*: high_mask[i, x, l] = (i > kappa*[x,l])
     speed_idx     = np.arange(N)
     high_mask     = speed_idx[:, None, None] > kappa_star[None, :, :]  # (N, X, L)
 
-    # Mass to redistribute: trapped cars going faster than κ*
+    # Mass to redistribute: trapped cars going faster than kappa*
     excess        = f_new[2] * high_mask                          # (N, X, L)
     excess_total  = excess.sum(axis=0)                            # (X, L)
 
-    # One-hot mask for κ* position
+    # One-hot mask for kappa* position
     kappa_mask    = speed_idx[:, None, None] == kappa_star[None, :, :]  # (N, X, L)
 
     f_new[2] = f_new[2] - excess + kappa_mask * excess_total[None, :, :]
     f_new[2] = np.maximum(f_new[2], 0.0)
 
     # ── Step B: Kinematic rates ───────────────────────────────────────────────
-    # Acceleration rates λ_acc^(m,i)  (eq.3): uses η^(m) per class
+    # Acceleration rates lambda_acc^(m,i)  (eq.3): uses eta^(m) per class
     supply_kin   = np.maximum(0.0, rho_max - omega)              # (X, L)
     acc_filter   = 1.0 - np.exp(-supply_kin / R_c)              # (X, L)
 
-    # speed_factor[m, i] = (1 - v[i]/v_max)^{η^(m)}
+    # speed_factor[m, i] = (1 - v[i]/v_max)^{eta^(m)}
     speed_factor = (1.0 - v[None, :] / v_max) ** eta_m[:, None] # (M, N)
 
     lambda_acc = (alpha[:, None, None, None]
@@ -277,17 +261,16 @@ def phase2_kinematics(f, omega):
                   * acc_filter[None, None, :, :])                # (M, N, X, L)
     # Dirichlet upper bound: no acceleration from top speed bin
     lambda_acc[:, N - 1, :, :] = 0.0
-    # Bs Acceleration Blockade: λ_acc^(Bs)[i ≥ i_thr] = 0  (eq.2)
+    # Bs Acceleration Blockade: lambda_acc^(Bs)[i >= i_thr] = 0
     lambda_acc[2, i_thr:, :, :] = 0.0
 
-    # Deceleration rates λ_dec^(m,i)  (eq.4-5):
-    # Interaction sum: Σ_n Σ_{k<i} β^(m,n)·(v_i−v_k)·w^(n)·f_k^(n) / ρ_max
-    # Uses prefix-sum trick (O(N) instead of O(N²))
-    beta_w = beta * w[None, :]                                   # (M, M) = β[m,n]*w[n]
-    # bwf[m, k, x, l] = Σ_n β_w[m,n] * f[n,k,x,l] / ρ_max
+    # Deceleration rates lambda_dec^(m,i):
+    # Interaction sum: sum_n sum_{k<i} beta^(m,n)*(v_i-v_k)*w^(n)*f_k^(n) / rho_max
+    beta_w = beta * w[None, :]                                   # (M, M) = beta[m,n]*w[n]
+    # bwf[m, k, x, l] = sum_n beta_w[m,n] * f[n,k,x,l] / rho_max
     bwf = np.einsum('mn,nkxl->mkxl', beta_w, f_new) / rho_max  # (M, N, X, L)
 
-    # Prefix sums (shifted right so cum_bwf[m,i] = Σ_{k<i} bwf[m,k])
+    # Prefix sums (shifted right so cum_bwf[m,i] = sum_{k<i} bwf[m,k])
     cum_bwf  = np.zeros_like(bwf)
     cum_vbwf = np.zeros_like(bwf)
     cum_bwf [:, 1:, :, :] = np.cumsum(bwf [:, :-1, :, :], axis=1)
@@ -296,7 +279,7 @@ def phase2_kinematics(f, omega):
 
     interaction = v[None, :, None, None] * cum_bwf - cum_vbwf   # (M, N, X, L)
 
-    # Singular pressure barrier B(Ω)^{η^(m)}  (eq.4)
+    # Singular pressure barrier B(Omega)^{eta^(m)}
     pressure = (rho_max / np.maximum(eps, rho_max - omega[None, None, :, :])
                 ) ** eta_m[:, None, None, None]                  # (M, N, X, L)
 
@@ -305,13 +288,7 @@ def phase2_kinematics(f, omega):
     # Dirichlet lower bound: no deceleration below min speed
     lambda_dec[:, 0, :, :] = 0.0
 
-    # ── Thomas algorithm: solve (I − Δt·A)·f_new = f_old ────────────────────
-    # Tridiagonal for speed axis (size N) per (m, x, l):
-    #   a[i] = −Δt · λ_acc[m, i-1]   sub-diagonal  (inflow from i-1 via acc)
-    #   b[i] =  1 + Δt·(λ_acc[i] + λ_dec[i])
-    #   c[i] = −Δt · λ_dec[m, i+1]   super-diagonal (inflow from i+1 via dec)
-    #   d[i] = f[m, i, x, l]  (rhs)
-
+    # ── Thomas algorithm: solve (I - Dt*A)*f_new = f_old ────────────────────
     a = np.zeros((M, N, X, L), dtype=np.float64)
     b = 1.0 + dt * (lambda_acc + lambda_dec)
     c = np.zeros((M, N, X, L), dtype=np.float64)
@@ -342,79 +319,23 @@ def phase2_kinematics(f, omega):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PHASE 3 — Lateral Lane-Changing  (Softplus, Bs frozen)
+# PHASE 3 — Spatial Advection  (FVM + Global Godunov Flux Limiter)
 # ─────────────────────────────────────────────────────────────────────────────
-def phase3_lateral(f, omega):
+def phase3_advection(f, omega):
     """
-    Softplus lateral rates for A (m=0) and Bf (m=1).
-    Bs (m=2): gamma = 0 everywhere (Absolute Lateral Immobilization, eq.3).
-    Dirichlet: gamma_{l→0} = gamma_{l→L+1} = 0.
+    All classes advect at their actual speed v_i.
 
-    Rate (eq.6):
-      γ_{l→l'} = κ^(m)/ω·ln[1+exp(ω·y)] · [1−exp(−max(0,ρ_max−Ω_{l'})/R_gap)]
-      where y = (Ω_{x,l} − Ω_{x,l'}) / ρ_max
-    """
-    def softplus(y):
-        return np.where(y > 20.0,
-                        y,
-                        np.log1p(np.exp(np.minimum(omega_sp * y, 500.0))) / omega_sp)
+    Demand Psi^(m):
+      Psi_{i,x->x+1,l}^(m) = v_i * f_{i,x,l}^(m) * [1-exp(-max(0,rho_max-Omega_{x+1,l})/R_supply)]
 
-    # ── Rightward: l → l+1 ───────────────────────────────────────────────────
-    y_right        = (omega[:, :-1] - omega[:, 1:]) / rho_max              # (X, L-1)
-    gap_right      = np.maximum(0.0, rho_max - omega[:, 1:])
-    gap_f_right    = 1.0 - np.exp(-gap_right / R_gap)                      # (X, L-1)
-    sp_right       = softplus(y_right)
+    Global aggregate demand at face x->x+1:
+      D_{x->x+1,l} = dt/dx * sum_{m,i} w^(m) * Psi^(m)_{i,x,l}
 
-    gr_internal    = (kappa[:, None, None, None]
-                      * sp_right[None, None, :, :]
-                      * gap_f_right[None, None, :, :])                     # (M, N, X, L-1)
-    gamma_right    = np.zeros((M, N, X, L), dtype=np.float64)
-    gamma_right[:, :, :, :L - 1] = gr_internal
-    # Bs immobilization
-    gamma_right[2, :, :, :] = 0.0
+    Global Godunov flux limiter alpha:
+      alpha_{x->x+1,l} = min(1, max(0, rho_max-Omega_{x+1,l}) / D)  if D > 0,  else 1
 
-    # ── Leftward: l → l-1 ────────────────────────────────────────────────────
-    y_left         = (omega[:, 1:] - omega[:, :-1]) / rho_max              # (X, L-1)
-    gap_left       = np.maximum(0.0, rho_max - omega[:, :-1])
-    gap_f_left     = 1.0 - np.exp(-gap_left / R_gap)
-    sp_left        = softplus(y_left)
-
-    gl_internal    = (kappa[:, None, None, None]
-                      * sp_left[None, None, :, :]
-                      * gap_f_left[None, None, :, :])
-    gamma_left     = np.zeros((M, N, X, L), dtype=np.float64)
-    gamma_left[:, :, :, 1:] = gl_internal
-    gamma_left[2, :, :, :] = 0.0
-
-    # ── Explicit Euler update ─────────────────────────────────────────────────
-    loss = (gamma_right + gamma_left) * f
-    gain = np.zeros_like(f)
-    gain[:, :, :, 1:]   += gamma_right[:, :, :, :L - 1] * f[:, :, :, :L - 1]
-    gain[:, :, :, :L-1] += gamma_left[:, :, :, 1:]      * f[:, :, :, 1:]
-
-    f_new = f + dt * (gain - loss)
-    f_new = np.maximum(f_new, 0.0)
-    return f_new, gamma_left, gamma_right
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PHASE 4 — Spatial Advection  (FVM + Global Godunov Flux Limiter)
-# ─────────────────────────────────────────────────────────────────────────────
-def phase4_advection(f, omega):
-    """
-    All classes advect at their actual speed v_i (eq.13).
-
-    Demand Ψ^(m)  (eq.13):
-      Ψ_{i,x→x+1,l}^(m) = v_i · f_{i,x,l}^(m) · [1−exp(−max(0,ρ_max−Ω_{x+1,l})/R_supply)]
-
-    Global aggregate demand at face x→x+1  (eq.14):
-      D_{x→x+1,l} = dt/dx · Σ_{m,i} w^(m) · Ψ^(m)_{i,x,l}
-
-    Global Godunov flux limiter α  (eq.14):
-      α_{x→x+1,l} = min(1, max(0, ρ_max−Ω_{x+1,l}) / D)  if D > 0,  else 1
-
-    Final flux  (eq.14):
-      Φ^(m) = α · Ψ^(m)
+    Final flux:
+      Phi^(m) = alpha * Psi^(m)
 
     Returns f_new (M,N,X,L), phi (M,N,X+1,L)
     """
@@ -424,23 +345,22 @@ def phase4_advection(f, omega):
     supply_arg    = np.maximum(0.0, rho_max - omega[1:X, :])           # (X-1, L)
     supply_factor = 1.0 - np.exp(-supply_arg / R_supply)               # (X-1, L)
 
-    # ── Demand Ψ at internal faces 1..X-1 ────────────────────────────────────
+    # ── Demand Psi at internal faces 1..X-1 ──────────────────────────────────
     Psi_internal = (v[None, :, None, None]
                     * f[:, :, :X - 1, :]
                     * supply_factor[None, None, :, :])                  # (M, N, X-1, L)
 
     # ── Global aggregate demand D_{face, l} ──────────────────────────────────
-    # D = dt/dx * Σ_{m,i} w[m] * Psi[m,i,face,l]
     D = ((dt / dx)
          * (w[:, None, None, None] * Psi_internal).sum(axis=(0, 1)))   # (X-1, L)
 
     # ── Available space at downstream cell ───────────────────────────────────
     available = np.maximum(0.0, rho_max - omega[1:X, :])               # (X-1, L)
 
-    # ── Global Godunov limiter α ──────────────────────────────────────────────
+    # ── Global Godunov limiter alpha ──────────────────────────────────────────
     alpha_g = np.where(D > eps, np.minimum(1.0, available / D), 1.0)  # (X-1, L)
 
-    # ── Apply α to all classes simultaneously ────────────────────────────────
+    # ── Apply alpha to all classes simultaneously ────────────────────────────
     phi[:, :, 1:X, :] = Psi_internal * alpha_g[None, None, :, :]
 
     # ── Right boundary: free outflow (no downstream constraint) ─────────────
@@ -468,13 +388,11 @@ def compute_macroscopic(f):
 # ─────────────────────────────────────────────────────────────────────────────
 def check_mass(f_old, f_new, phi):
     """
-    Verify ΔP^(B) ≈ net boundary flux for combined B class (Bf+Bs).
-    Capture/release is internal zero-sum (proven in §7 Theorem).
+    Verify DeltaP^(B) approx net boundary flux for combined B class (Bf+Bs).
+    Capture/release is internal zero-sum (proven in theorem).
     """
-    # Combined B mass (Bf + Bs)
     mass_B_old = ((f_old[1] + f_old[2]) * w[1]).sum() * dx
     mass_B_new = ((f_new[1] + f_new[2]) * w[1]).sum() * dx
-    # Net outflow through boundaries (right face X, left face 0)
     net_flux = ((w[1] * phi[1, :, X, :] + w[2] * phi[2, :, X, :]).sum()
                 - (w[1] * phi[1, :, 0, :] + w[2] * phi[2, :, 0, :]).sum()) * dt
     residual = abs((mass_B_new - mass_B_old) + net_flux)
@@ -491,7 +409,7 @@ def setup_hdf5(filepath, T):
 
     # ── Parameters ───────────────────────────────────────────────────────────
     pg = hf.create_group('parameters')
-    pg.attrs['model']         = 'Autonomous Multiclass TRM m3+m4'
+    pg.attrs['model']         = 'Autonomous Multiclass TRM m3+m4 P_block'
     pg.attrs['M']             = M
     pg.attrs['N']             = N
     pg.attrs['X']             = X
@@ -502,28 +420,24 @@ def setup_hdf5(filepath, T):
     pg.attrs['v_max_mps']     = v_max
     pg.attrs['rho_max']       = rho_max
     pg.attrs['R_supply']      = R_supply
-    pg.attrs['R_gap']         = R_gap
     pg.attrs['R_c']           = R_c
-    pg.attrs['omega_sp']      = omega_sp
     pg.attrs['eps']           = eps
     pg.attrs['v_A_ff_mps']    = v_A_ff
     pg.attrs['i_thr']         = i_thr
-    pg.attrs['eta_lat']       = eta_lat
+    pg.attrs['eta_block']     = eta_block
     pg.attrs['sigma_0']       = sigma_0
     pg.attrs['mu_0']          = mu_0
-    pg.attrs['xi']            = xi
     pg.attrs['R_A']           = R_A
     pg.attrs['omega_0_BA']    = omega_0_BA
     pg.attrs['beta_BA']       = beta_BA
     pg.attrs['CFL']           = cfl
-    pg.attrs['operator_split'] = '4-phase: Capture/Release -> Kinematics -> Lateral -> Advection'
+    pg.attrs['operator_split'] = '3-phase: Capture/Release (P_block) -> Kinematics -> Advection'
 
     pg['v_mps']      = v
     pg['w_PCE']      = w
     pg['alpha_hz']   = alpha
     pg['eta_m']      = eta_m
     pg['omega_0_hz'] = omega_0
-    pg['kappa_hz']   = kappa
     pg['beta_matrix'] = beta
 
     # ── Data datasets ─────────────────────────────────────────────────────────
@@ -539,11 +453,9 @@ def setup_hdf5(filepath, T):
     mk('phi',         (M, N, X + 1, L))# spatial fluxes
     mk('lambda_acc',  (M, N, X, L))    # acceleration rates
     mk('lambda_dec',  (M, N, X, L))    # deceleration rates
-    mk('gamma_left',  (M, N, X, L))    # lateral rate l→l-1
-    mk('gamma_right', (M, N, X, L))    # lateral rate l→l+1
+    mk('P_block',     (X, L))          # probabilistic blocking factor (Phase 1)
     mk('sigma',       (N, X, L))       # capture rate (Phase 1)
     mk('mu',          (X, L))          # release rate (Phase 1)
-    mk('E_trap',      (X, L))          # entrapment factor
     mk('kappa_star',  (X, L))          # truck speed threshold per cell (int stored as float)
     mk('rho_macro',   (M, X, L))       # macroscopic density
     mk('q_macro',     (M, X, L))       # macroscopic flow
@@ -559,24 +471,23 @@ def setup_hdf5(filepath, T):
 # ─────────────────────────────────────────────────────────────────────────────
 def run(output_path):
     print("=" * 66)
-    print("  Autonomous Multiclass TRM — m3+m4 Moving Bottleneck Extension")
-    print(f"  Grid: {X}×{L} cells/lanes, {N} speeds, M={M} classes")
-    print(f"  Steps: {T_STEPS}  dt={dt}s  →  {T_STEPS*dt:.0f}s simulation")
-    print(f"  i_thr={i_thr}  (v_A_ff={v_A_ff} m/s)")
-    print(f"  4-Phase: CaptureRelease → Kinematics → Lateral → Advection")
+    print("  Autonomous Multiclass TRM -- m3+m4 Probabilistic Blocking")
+    print(f"  Grid: {X}x{L} cells/lanes, {N} speeds, M={M} classes")
+    print(f"  Steps: {T_STEPS}  dt={dt}s  ->  {T_STEPS*dt:.0f}s simulation")
+    print(f"  i_thr={i_thr}  (v_A_ff={v_A_ff} m/s)  eta_block={eta_block}")
+    print(f"  3-Phase: P_block CaptureRelease -> Kinematics -> Advection")
     print(f"  Output: {output_path}")
     print("=" * 66)
 
-    # Estimate file size
+    # Estimate file size (no gamma datasets, added P_block)
     bytes_per_step = (
         M*N*X*L*8 +       # f
         X*L*8 +           # omega
         M*N*(X+1)*L*8 +   # phi
         M*N*X*L*8*2 +     # lambda_acc + lambda_dec
-        M*N*X*L*8*2 +     # gamma_left + gamma_right
+        X*L*8 +           # P_block
         N*X*L*8 +         # sigma
-        X*L*8*2 +         # mu + E_trap + kappa_star
-        X*L*8 +
+        X*L*8*2 +         # mu + kappa_star
         M*X*L*8*3         # rho, q, u macro
     )
     print(f"  Estimated size: {T_STEPS * bytes_per_step / 1024**2:.0f} MB\n")
@@ -588,7 +499,7 @@ def run(output_path):
     diag   = hf['diagnostics/mass_rel_error_B']
 
     # Upstream inflow: Bf cars at max speed into all lanes
-    INFLOW_BF = 0.001   # veh/m·s
+    INFLOW_BF = 0.001   # veh/m
 
     t_wall = time.perf_counter()
 
@@ -597,20 +508,16 @@ def run(output_path):
 
         omega = compute_omega(f)
 
-        # Phase 1: Exact Capture & Release
-        f, sigma, mu, E_trap = phase1_capture_release(f, omega)
+        # Phase 1: Exact Capture & Release (P_block-based)
+        f, sigma, mu, P_block = phase1_capture_release(f, omega)
 
         # Phase 2: Algebraic Projection + Thomas Kinematics
         omega = compute_omega(f)
         f, lambda_acc, lambda_dec, kappa_star = phase2_kinematics(f, omega)
 
-        # Phase 3: Lateral Lane-Changing (Bs frozen)
+        # Phase 3: Spatial Advection (global Godunov)
         omega = compute_omega(f)
-        f, gamma_left, gamma_right = phase3_lateral(f, omega)
-
-        # Phase 4: Spatial Advection (global Godunov)
-        omega = compute_omega(f)
-        f, phi = phase4_advection(f, omega)
+        f, phi = phase3_advection(f, omega)
 
         # Upstream inflow boundary (Bf at max speed)
         f[1, N - 1, 0, :] += INFLOW_BF * dt
@@ -630,11 +537,9 @@ def run(output_path):
         dg['phi'][t]          = phi
         dg['lambda_acc'][t]   = lambda_acc
         dg['lambda_dec'][t]   = lambda_dec
-        dg['gamma_left'][t]   = gamma_left
-        dg['gamma_right'][t]  = gamma_right
+        dg['P_block'][t]      = P_block
         dg['sigma'][t]        = sigma
         dg['mu'][t]           = mu
-        dg['E_trap'][t]       = E_trap
         dg['kappa_star'][t]   = kappa_star.astype(np.float64)
         dg['rho_macro'][t]    = rho_m
         dg['q_macro'][t]      = q_m
@@ -648,7 +553,7 @@ def run(output_path):
             Bs_tot  = f[2].sum()
             print(f"  step {t:4d}/{T_STEPS}  |  {step_ms:5.1f}ms  |"
                   f"  ETA {eta_s:5.0f}s  |"
-                  f"  Ω_peak={o_peak:.4f}  |"
+                  f"  Omega_peak={o_peak:.4f}  |"
                   f"  f_Bs_total={Bs_tot:.4f}  |"
                   f"  mass_err_B={rel_err:.2e}")
 
@@ -656,11 +561,11 @@ def run(output_path):
             hf.flush()
 
     hf.attrs['description'] = (
-        'm3+m4 Autonomous Multiclass TRM benchmark dataset. '
+        'm3+m4 Autonomous Multiclass TRM benchmark dataset (P_block version). '
         'Classes: A (trucks), Bf (free cars), Bs (trapped cars). '
-        '4-phase Lie-Trotter: Capture/Release (exact exp) -> '
-        'Kinematics+Projection (Thomas) -> Lateral (Softplus) -> '
-        'Advection (global Godunov). '
+        '3-phase Lie-Trotter: Capture/Release (P_block exact exp) -> '
+        'Kinematics+Projection (Thomas) -> Advection (global Godunov). '
+        'No lateral phase. Lanes independent. '
         'Benchmark: A bottleneck cells 74-79, Bf injection cells 59-69.'
     )
     hf.close()

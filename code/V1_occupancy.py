@@ -12,11 +12,23 @@ PCE 权重: w = [2.5, 1.0, 1.0]  (Bf 和 Bs 共享 w=1.0)
 """
 
 import os
+import platform
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
+
+# Font setup for Chinese text rendering in figures
+if platform.system() == 'Darwin':
+    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS',
+                                        'STHeiti', 'sans-serif']
+elif platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
+else:
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False
 
 BASE   = os.path.dirname(os.path.abspath(__file__))
 HDF5   = os.path.join(BASE, 'multiclass_trm_benchmark_500mb.h5')
@@ -132,10 +144,10 @@ def run():
         ax = axes[0]
         ax.plot(time_s, omega_max_per_t, 'C0-', lw=1.5, label=r'$\max_{x,l}\Omega(t)$')
         ax.axhline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}=0.15$')
-        ax.set_xlabel('时间 [s]'); ax.set_ylabel(r'$\Omega$ [PCE/m]')
-        ax.set_title('[V1-a] 全局最大占用密度  (m3+m4, M=3)')
+        ax.set_xlabel('Time [s]'); ax.set_ylabel(r'$\Omega$ [PCE/m]')
+        ax.set_title('[V1-a] Global Max Occupancy Density (M=3 classes)')
         ax.legend(); ax.grid(alpha=0.3)
-        ax.annotate('初始 A 类卡车瓶颈\nΩ≈0.145',
+        ax.annotate('Initial Class A Truck\nBottleneck, \u03a9\u22480.145',
                     xy=(0, omega_max_per_t[0]), xytext=(20, 0.115),
                     arrowprops=dict(arrowstyle='->', color='orange'),
                     fontsize=9, color='orange')
@@ -155,8 +167,8 @@ def run():
         ax2.axhline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
         ax2.axvspan(74, 79, alpha=0.1, color='red')
         ax2.axvspan(59, 69, alpha=0.1, color='blue')
-        ax2.set_xlabel('空间格子 x'); ax2.set_ylabel(r'$\Omega$ [PCE/m]')
-        ax2.set_title('[V1-c] t=0 各类占用密度贡献（中间车道）')
+        ax2.set_xlabel('Cell x'); ax2.set_ylabel(r'$\Omega$ [PCE/m]')
+        ax2.set_title('[V1-c] t=0 Per-class Occupancy Contribution (Middle Lane)')
         ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
 
         plt.tight_layout()

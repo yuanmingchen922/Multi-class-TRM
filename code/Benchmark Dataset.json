@@ -1,8 +1,8 @@
 {
   "Metadata": {
-    "Model": "Autonomous Multiclass TRM — m3+m4 Unified Moving Bottleneck Extension",
-    "Description": "High-fidelity benchmark dataset for stiff ODE resolution, 4-phase operator splitting, multiclass shockwave simulation, and isomorphic moving bottleneck capture/release dynamics.",
-    "Topology": "3-Lane Open Highway Segment",
+    "Model": "Autonomous Multiclass TRM — m3+m4 Probabilistic Blocking Extension",
+    "Description": "High-fidelity benchmark dataset for stiff ODE resolution, 3-phase operator splitting, multiclass shockwave simulation, and probabilistic blocking-based moving bottleneck capture/release dynamics. Replaces Softplus lateral lane-changing with P_block probability model.",
+    "Topology": "3-Lane Open Highway Segment (lanes solved as independent 1D systems)",
     "Vehicle_Classes_M": 3,
     "Class_Definitions": {
       "Class_A_m0": "Trucks (heavy vehicles with free-flow speed cap v_A_ff)",
@@ -12,7 +12,7 @@
   },
 
   "Spatiotemporal_Discretization_Domain": {
-    "Description": "Eulerian FVM grid parameters satisfying the explicit Phase 4 CFL stability constraint.",
+    "Description": "Eulerian FVM grid parameters satisfying the explicit Phase 3 CFL stability constraint.",
     "Total_Cells_X": 150,
     "Cell_Length_Delta_x_meters": 20.0,
     "Total_Lanes_L": 3,
@@ -26,17 +26,15 @@
   },
 
   "Macroscopic_Capacity_and_Filter_Parameters": {
-    "Description": "Constants regulating effective spatial boundaries, regularizers, and continuous exponential relaxation filters.",
+    "Description": "Constants regulating effective spatial boundaries, regularizers, and continuous exponential relaxation filters. Lateral gap filter (R_gap) and Softplus stiffness (omega_sp) removed — no lateral phase in new model.",
     "rho_max_Absolute_Jam_Density_PCE_per_meter": 0.15,
     "R_supply_Advection_Filter_PCE_per_meter": 0.035,
-    "R_gap_Lateral_Acceptance_PCE_per_meter": 0.025,
     "R_c_Acceleration_Relaxation_PCE_per_meter": 0.05,
-    "omega_Softplus_Smoothing_Stiffness": 20.0,
     "epsilon_Mathematical_Regularizer": 1.0e-8
   },
 
   "Heterogeneous_Kinematic_Class_Profiles": {
-    "Description": "Parameters for Class A (Trucks), Class Bf (Free Cars), Class Bs (Trapped Cars). Bf and Bs share the same PCE weight w=1.0.",
+    "Description": "Parameters for Class A (Trucks), Class Bf (Free Cars), Class Bs (Trapped Cars). Bf and Bs share the same PCE weight w=1.0. kappa_hz (lateral agility) removed — no lateral phase.",
     "PCE_Weights_w": [2.5, 1.0, 1.0],
     "Class_A_Truck": {
       "m_index": 0,
@@ -44,7 +42,6 @@
       "alpha_Base_Acceleration_Rate_hz": 0.35,
       "eta_m_Singular_Barrier_Stiffness_Exponent": 4.5,
       "omega_0_Spontaneous_Anticipation_hz": 0.05,
-      "kappa_Lateral_Agility_hz": 0.08,
       "v_A_ff_Free_Flow_Speed_Limit_mps": 14.0,
       "i_thr_Speed_Index_0based": 6,
       "Note": "v[6]=14.0 m/s is the truck free-flow cap. lambda_acc^(Bs)=0 for i>=i_thr."
@@ -54,8 +51,7 @@
       "w_PCE_Spatial_Weight": 1.0,
       "alpha_Base_Acceleration_Rate_hz": 1.50,
       "eta_m_Singular_Barrier_Stiffness_Exponent": 2.0,
-      "omega_0_Spontaneous_Anticipation_hz": 0.01,
-      "kappa_Lateral_Agility_hz": 0.60
+      "omega_0_Spontaneous_Anticipation_hz": 0.01
     },
     "Class_Bs_Trapped_Car": {
       "m_index": 2,
@@ -63,8 +59,7 @@
       "alpha_Base_Acceleration_Rate_hz": 1.50,
       "eta_m_Singular_Barrier_Stiffness_Exponent": 2.0,
       "omega_0_Spontaneous_Anticipation_hz": 0.01,
-      "kappa_Lateral_Agility_hz": 0.0,
-      "Constraints": "lambda_acc^(Bs)=0 for i>=i_thr (Acceleration Blockade). gamma^(Bs)=0 all lanes (Absolute Lateral Immobilization)."
+      "Constraints": "lambda_acc^(Bs)=0 for i>=i_thr (Acceleration Blockade). No lateral phase — Bs constraint handled kinematically only."
     }
   },
 
@@ -78,24 +73,27 @@
   },
 
   "Moving_Bottleneck_Reaction_Parameters": {
-    "Description": "New parameters governing the Capture (Bf->Bs) and Release (Bs->Bf) reactions introduced in the m3+m4 extension.",
+    "Description": "Parameters governing the Capture (Bf->Bs) and Release (Bs->Bf) reactions. NEW: P_block replaces E_trap/G escape gate. xi (lateral awareness) and eta_lat (escape gate exponent) removed.",
     "v_A_ff_mps": 14.0,
     "i_thr_0based": 6,
-    "eta_lat_Lateral_Escape_Gate_Exponent": 2.0,
+    "eta_block_Probabilistic_Blocking_Exponent": 2.0,
     "omega_0_BA_Spontaneous_Exposure_hz": 0.05,
     "beta_BA_Kinetic_Exposure_Rate_per_meter": 0.06,
     "sigma_0_B_Base_Capture_Rate_hz": 0.5,
     "mu_0_B_Base_Release_Rate_hz": 0.3,
-    "xi_Lateral_Awareness_Weight": 0.5,
-    "R_A_Truck_Dispersal_Scale_PCE_per_meter": 0.05
+    "R_A_Truck_Dispersal_Scale_PCE_per_meter": 0.05,
+    "P_block_Formula": "P_block(x) = (clip(Omega_x, 0, rho_max) / rho_max)^eta_block  (Eq. 8)",
+    "sigma_Formula": "sigma_x^(i) = sigma_0 * P_block(x) * A_x^(i) * B(Omega_x)  (Eq. 9)",
+    "theta_A_Formula": "theta_x^(A) = sum_{k<=i_thr} w^(A) * f_{k,x}^(A) / rho_max  (Eq. 10)",
+    "S_tilde_Formula": "S_tilde_x = P_block(x) * theta_x^(A)  (Eq. 11)",
+    "mu_Formula": "mu_x = mu_0 * exp(-S_tilde_x / R_A)  (Eq. 12)"
   },
 
   "Operator_Splitting_Sequence": {
-    "Description": "4-phase Lie-Trotter splitting. Order is critical to prevent ghost penetration.",
-    "Phase_1": "Capture & Release (sigma, mu) — Exact Analytical Matrix Exponential. phi(z)=(1-e^{-z})/z safe at z->0.",
+    "Description": "3-phase Lie-Trotter splitting. Lateral lane-changing (Phase 3 in old model) fully removed. Each lane solved as independent 1D system.",
+    "Phase_1": "Capture & Release (sigma, mu) — Exact Analytical Matrix Exponential. phi(z)=(1-e^{-z})/z safe at z->0. Uses P_block instead of E_trap.",
     "Phase_2": "Internal Speed Changes (lambda) — Dynamic Algebraic Projection for Bs + Semi-implicit Thomas Algorithm.",
-    "Phase_3": "Lateral Lane-Changing (gamma) — Explicit Euler. gamma^(Bs)=0 enforced.",
-    "Phase_4": "Spatial Advection (Phi) — Explicit Euler + Global Godunov Flux Limiter alpha."
+    "Phase_3": "Spatial Advection (Phi) — Explicit Euler + Global Godunov Flux Limiter alpha."
   },
 
   "Topological_Boundary_Enforcement_Directives": {
@@ -104,15 +102,11 @@
       "Upper_Bound": "lambda_{N->N+1} = 0 for all classes.",
       "Bs_Blockade": "lambda_{i->i+1}^(Bs) = 0 for all i >= i_thr."
     },
-    "Lateral_Topology_Edges": {
-      "Inner_Bound": "gamma_{1->0} = 0. Escape gate G_{1->0} = 1 (boundary = fully blocked).",
-      "Outer_Bound": "gamma_{L->L+1} = 0. Escape gate G_{L->L+1} = 1.",
-      "Bs_Immobilization": "gamma^(Bs) = 0 for all lanes."
-    }
+    "Lateral_Topology": "No lateral phase. Lanes are fully independent 1D systems. Bs constraint is purely kinematic (acceleration blockade)."
   },
 
   "Numerical_Validation_Scenario_Extreme_Stiffness": {
-    "Description": "Pathological initialization to validate Phase 1 exact exponential, Phase 2 Thomas stability, and Phase 4 Godunov limiter under extreme stiffness.",
+    "Description": "Pathological initialization to validate Phase 1 exact exponential, Phase 2 Thomas stability, and Phase 3 Godunov limiter under extreme stiffness.",
     "Downstream_Bottleneck_Zone_Cells_75_to_80": {
       "Description": "Near-capacity jam of Class A trucks at minimum speed.",
       "Class": "A (m=0)",
@@ -120,7 +114,7 @@
       "Speed_mps": 2.0,
       "Density_veh_per_meter": 0.058,
       "Effective_Occupancy_PCE_per_meter": 0.145,
-      "Condition": "Omega=0.145 near rho_max=0.150. Singular Barrier B=(0.15/0.005)^4.5=30^4.5=4,155,311.9."
+      "Condition": "Omega=0.145 near rho_max=0.150. P_block=(0.145/0.150)^2=0.935 (near full blocking). Singular Barrier B=(0.15/0.005)^4.5=30^4.5=4,155,311.9."
     },
     "Upstream_High_Speed_Injection_Zone_Cells_60_to_70": {
       "Description": "Dense platoon of Class Bf free cars at maximum speed approaching bottleneck.",
@@ -129,7 +123,7 @@
       "Speed_mps": 30.0,
       "Density_veh_per_meter": 0.060,
       "Effective_Occupancy_PCE_per_meter": 0.060,
-      "Condition": "Expected to trigger Phase 1 capture upon hitting bottleneck, validating moving bottleneck entrapment."
+      "Condition": "Expected to trigger Phase 1 capture upon hitting bottleneck. P_block activates as Bf approaches high-density truck zone."
     }
   }
 }

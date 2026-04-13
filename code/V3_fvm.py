@@ -131,9 +131,7 @@ def run():
         max_alpha_violation = 0.0
         for t in range(0, T, 40):
             phi_t   = hf['data/phi'][t]                         # (M, N, X+1, L)
-            omega_t = hf['data/omega'][max(0, t - 1)]           # pre-advection proxy (X, L)
-            # phi[t] was limited by omega_before_phase3[t].
-            # Phases 1&2 preserve omega (V6-e), so omega[t-1] ≈ omega_before_phase3[t].
+            omega_t = hf['data/omega_pre_phase3'][t]            # exact omega used by Godunov limiter
             # Total PCE flux demand at each internal face
             # Φ_total[face] = Σ_{m,i} w[m] * phi[m,i,face,l]
             phi_total = (w[:, None, None, None] * phi_t).sum(axis=(0, 1))  # (X+1, L)

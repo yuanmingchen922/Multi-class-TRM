@@ -65,7 +65,7 @@ i_thr      = int(np.searchsorted(v, v_A_ff, side='right') - 1)  # = 6 (v[6]=14.0
 eta_block  = 2.0    # probabilistic blocking exponent (Eq. 8)
 omega_0_BA = 0.05   # kinetic exposure spontaneous rate [Hz]
 beta_BA    = 0.06   # kinetic exposure rate [m^-1]
-sigma_0    = 0.5    # base capture rate [Hz]
+sigma_0    = 0.8    # base capture rate [Hz]
 mu_0       = 0.3    # base release rate [Hz]
 R_A        = 0.05   # truck dispersal scale [PCE/m]
 
@@ -96,7 +96,7 @@ def initialize_state():
     # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
     # Left half of ring = sustained free-flow state → classic Riemann problem setup.
     # Estimated shock speed ≈ -4.6 m/s → shock travels ~58 cells in 250 s (clearly visible).
-    f[1, 14, 0:74, :] = 0.020
+    f[1, 14, 0:74, :] = 0.035
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0
@@ -472,9 +472,10 @@ def setup_hdf5(filepath, T):
     mk('sigma',       (N, X, L))       # capture rate (Phase 1)
     mk('mu',          (X, L))          # release rate (Phase 1)
     mk('kappa_star',  (X, L))          # truck speed threshold per cell (int stored as float)
-    mk('rho_macro',   (M, X, L))       # macroscopic density
-    mk('q_macro',     (M, X, L))       # macroscopic flow
-    mk('u_macro',     (M, X, L))       # macroscopic speed
+    mk('rho_macro',        (M, X, L))  # macroscopic density
+    mk('q_macro',         (M, X, L))  # macroscopic flow
+    mk('u_macro',         (M, X, L))  # macroscopic speed
+    mk('omega_pre_phase3', (X, L))    # omega immediately before Phase 3 (exact Godunov reference)
 
     dg.create_dataset('time_s', data=np.arange(T) * dt)
     hf.create_dataset('diagnostics/mass_rel_error_B', shape=(T,), dtype=np.float64)
@@ -529,6 +530,7 @@ def run(output_path):
 
         # Phase 3: Spatial Advection (global Godunov)
         omega = compute_omega(f)
+        omega_pre3 = omega.copy()          # exact reference for V3-e Godunov check
         f, phi = phase3_advection(f, omega)
 
         # Final omega
@@ -549,9 +551,10 @@ def run(output_path):
         dg['sigma'][t]        = sigma
         dg['mu'][t]           = mu
         dg['kappa_star'][t]   = kappa_star.astype(np.float64)
-        dg['rho_macro'][t]    = rho_m
-        dg['q_macro'][t]      = q_m
-        dg['u_macro'][t]      = u_m
+        dg['rho_macro'][t]        = rho_m
+        dg['q_macro'][t]          = q_m
+        dg['u_macro'][t]          = u_m
+        dg['omega_pre_phase3'][t] = omega_pre3
         diag[t]               = rel_err
 
         if t % 50 == 0 or t == T_STEPS - 1:

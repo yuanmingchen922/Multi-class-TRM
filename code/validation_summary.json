@@ -1,11 +1,11 @@
 {
   "total_checks": 41,
   "passed_checks": 41,
-  "total_elapsed_s": 3.13,
+  "total_elapsed_s": 2.87,
   "modules": {
     "V1": {
       "summary": "PASSED 5/5",
-      "elapsed_s": 0.25,
+      "elapsed_s": 0.2,
       "checks": {
         "V1-a": {
           "passed": true,
@@ -65,7 +65,7 @@
     },
     "V3": {
       "summary": "PASSED 7/7",
-      "elapsed_s": 0.44,
+      "elapsed_s": 0.37,
       "checks": {
         "V3-a": {
           "passed": true,
@@ -99,7 +99,7 @@
     },
     "V4": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.42,
+      "elapsed_s": 0.43,
       "checks": {
         "V4-a": {
           "passed": true,
@@ -129,7 +129,7 @@
     },
     "V5": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.53,
+      "elapsed_s": 0.48,
       "checks": {
         "V5-a": {
           "passed": true,
@@ -159,7 +159,7 @@
     },
     "V6": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.59,
+      "elapsed_s": 0.53,
       "checks": {
         "V6-a": {
           "passed": true,
@@ -189,7 +189,7 @@
     },
     "V7": {
       "summary": "PASSED 4/4",
-      "elapsed_s": 0.5,
+      "elapsed_s": 0.48,
       "checks": {
         "V7-a": {
           "passed": true,

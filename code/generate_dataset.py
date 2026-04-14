@@ -66,7 +66,7 @@ i_thr      = int(np.searchsorted(v, v_A_ff, side='right') - 1)  # = 6 (v[6]=14.0
 eta_block  = 2.0    # probabilistic blocking exponent (Eq. 8)
 omega_0_BA = 0.05   # kinetic exposure spontaneous rate [Hz]
 beta_BA    = 0.06   # kinetic exposure rate [m^-1]
-sigma_0    = 0.8    # base capture rate [Hz]
+sigma_0    = 0.5    # base capture rate [Hz]
 mu_0       = 0.3    # base release rate [Hz]
 R_A        = 0.05   # truck dispersal scale [PCE/m]
 
@@ -90,14 +90,15 @@ def initialize_state():
     """Return f of shape (M=3, N, X, L)."""
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
-    # Class A (trucks, m=0): bottleneck at cells 74-79, min speed (i=0, v=2m/s)
+    # Class A (trucks, m=0): bottleneck at cells 74-79, v=2m/s (i=1, NOT i=0)
+    # Using i=1 (v=2 m/s) so trucks can advect and rarefy, as supervisor noted.
+    # v=0 bin remains available for deceleration dynamics but is not the initial state.
     # Ω = 2.5 × 0.058 = 0.145 ≈ ρ_max  → extreme stiffness
-    f[0, 0, 74:80, :] = 0.058
+    f[0, 1, 74:80, :] = 0.058
 
     # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
-    # Left half of ring = sustained free-flow state → classic Riemann problem setup.
-    # Estimated shock speed ≈ -4.6 m/s → shock travels ~58 cells in 250 s (clearly visible).
-    f[1, 14, 0:74, :] = 0.035
+    # Restored to 0.020 to preserve Bf circulation and feather structure in Hovmöller.
+    f[1, 15, 0:74, :] = 0.020
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0

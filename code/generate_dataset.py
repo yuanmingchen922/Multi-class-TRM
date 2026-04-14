@@ -95,9 +95,10 @@ def initialize_state():
     # Provides acceleration headroom so trucks can rarefy toward v_A_ff=14 m/s.
     f[0, 1, 74:80, :] = 0.030
 
-    # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
-    # Restored to 0.020 to preserve Bf circulation and feather structure in Hovmöller.
-    f[1, 15, 0:74, :] = 0.020
+    # Class Bf (free cars, m=1): partial upstream (x=0-40, v=30m/s, ρ=0.020)
+    # x=41-73 left sparse so trucks have a low-density escape zone downstream.
+    # This allows the truck jam to rarefy toward v_A_ff=14 m/s (supervisor request).
+    f[1, 15, 0:41, :] = 0.020
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0

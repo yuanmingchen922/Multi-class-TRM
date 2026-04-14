@@ -66,8 +66,8 @@ def run():
         print(f"{'='*60}")
 
         # Load P_block and related data
-        P_block_all = hf['data/P_block'][:]    # (T, X, L)
-        omega_all   = hf['data/omega'][:]      # (T, X, L)
+        P_block_all = hf['data/P_block'][:]           # (T, X, L) — computed from pre-phase1 omega
+        omega_all   = hf['data/omega_pre_phase3'][:]  # (T, X, L) — pre-phase3 omega ≈ pre-phase1 (phases 1&2 preserve Ω, V6-e)
         sigma_all   = hf['data/sigma'][:]      # (T, N, X, L)
 
         # ── [V4-a]  P_block in [0, 1] for all time/space ─────────────────────

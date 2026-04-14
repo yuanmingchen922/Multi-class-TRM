@@ -26,7 +26,7 @@ import os
 # ─────────────────────────────────────────────────────────────────────────────
 X       = 150        # spatial cells
 L       = 3          # lanes (independent 1D systems)
-N       = 15         # speed categories
+N       = 16         # speed categories (v=0 added per supervisor: stationary traffic class)
 M       = 3          # vehicle classes: 0=A (truck), 1=Bf (free car), 2=Bs (trapped car)
 
 dx      = 20.0       # cell length [m]
@@ -34,7 +34,8 @@ dt      = 0.5        # time step [s]
 T_STEPS = 500        # total time steps → 250 s simulation
 
 # Speed spectrum v_i [m/s], i = 0..N-1
-v = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0,
+# v[0]=0: completely stationary (jam), v[1..15]=2..30 m/s free-flow spectrum
+v = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0,
               18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0], dtype=np.float64)
 v_max   = 30.0
 

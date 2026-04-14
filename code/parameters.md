@@ -1,8 +1,6 @@
 # Multiclass TRM — Parameter Reference Sheet
 
 **Model version**: m7 (P_block probabilistic blocking)  
-**Last updated**: 2026-04-13  
-**Purpose**: Parameter overview for supervisor review and calibration discussion
 
 ---
 
@@ -34,13 +32,14 @@
 
 ## 2. Speed Spectrum
 
-| Index i | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 |
-|---------|---|---|---|---|---|---|---|---|---|---|----|----|----|----|-----|
-| v_i (m/s) | 2 | 4 | 6 | 8 | 10 | 12 | **14** | 16 | 18 | 20 | 22 | 24 | 26 | 28 | **30** |
-| v_i (km/h) | 7.2 | 14.4 | 21.6 | 28.8 | 36.0 | 43.2 | **50.4** | 57.6 | 64.8 | 72.0 | 79.2 | 86.4 | 93.6 | 100.8 | **108.0** |
+| Index i | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+|---------|---|---|---|---|---|---|---|---|---|---|----|----|----|----|----|----|
+| v_i (m/s) | **0** | 2 | 4 | 6 | 8 | 10 | 12 | **14** | 16 | 18 | 20 | 22 | 24 | 26 | 28 | **30** |
+| v_i (km/h) | **0** | 7.2 | 14.4 | 21.6 | 28.8 | 36.0 | 43.2 | **50.4** | 57.6 | 64.8 | 72.0 | 79.2 | 86.4 | 93.6 | 100.8 | **108.0** |
 
-- i = 6 (14 m/s) = truck free-flow speed cap (`i_thr`)
-- i = 14 (30 m/s) = maximum speed (`v_max`)
+- i = 0 (0 m/s) = **stationary traffic** (added per supervisor: allows trucks to be completely stopped in deep congestion)
+- i = 7 (14 m/s) = truck free-flow speed cap (`i_thr`, shifted from 6 due to v=0 addition)
+- i = 15 (30 m/s) = maximum speed (`v_max`)
 
 ---
 
@@ -137,6 +136,9 @@ $$\mu_x = \mu_0 \cdot \exp\!\left(-\frac{\tilde{S}_x}{R_A}\right) \qquad \text{(
 
 | Parameter | Previous Value | **Current Value** | Changed On | Reason |
 |-----------|---------------|-------------------|-----------|--------|
+| N (speed categories) | 15 | **16** | 2026-04-14 | Added v=0 stationary class per supervisor suggestion |
+| v[0] (minimum speed) | 2.0 m/s | **0.0 m/s** | 2026-04-14 | Allows completely stopped trucks in deep congestion |
+| i_thr (truck speed cap index) | 6 | **7** | 2026-04-14 | Auto-shifted due to v=0 addition; v[7]=14 m/s unchanged |
 | σ₀ (base capture rate) | 0.5 Hz | **0.8 Hz** | 2026-04-13 | Increase Bs accumulation; stronger shock signal |
 | ρ_Bf (upstream Bf density) | 0.020 veh/m | **0.035 veh/m** | 2026-04-13 | Stronger upstream car flow; clearer shock in Hovmöller |
 | Bf initial zone | x = 59–69 (localized pulse) | **x = 0–73 (uniform)** | earlier | Classic Riemann IC; sustained shock vs. transient pulse |
@@ -153,7 +155,43 @@ $$\mu_x = \mu_0 \cdot \exp\!\left(-\frac{\tilde{S}_x}{R_A}\right) \qquad \text{(
 
 ---
 
-## 10. Validation Status (41/41 PASS)
+## 10. Equivalent Triangular Flux LWR Parameters (for supervisor's comparison)
+
+The kinetic model does not use a triangular flux function directly. These parameters are **extracted from simulation data** to enable comparison with a two-class LWR triangular flux model.
+
+### Two-class LWR setup
+
+| Class | Free-flow speed v_f | PCE weight |
+|-------|---------------------|-----------|
+| Trucks (A) | **14.0 m/s = 50.4 km/h** | 2.5 |
+| Cars (Bf/Bs) | **30.0 m/s = 108.0 km/h** | 1.0 |
+| Shared jam density ρ_max | **0.15 PCE/m** | — |
+
+### Fitted congested branch (from fundamental diagram)
+
+The backward wave speed **w** is fitted from simulation data as the slope of Q vs Ω in the congested region (Ω > 0.075 PCE/m):
+
+$$Q = -w \cdot \Omega + w \cdot \rho_{\max} \quad \text{(congested branch)}$$
+
+| Parameter | Value |
+|-----------|-------|
+| **Backward wave speed w** | **13.84 m/s = 49.8 km/h** |
+| Critical density ρ_c (cars) | 0.0474 PCE/m |
+| Critical density ρ_c (trucks) | 0.0746 PCE/m |
+| Capacity flow q_max (cars) | 1.42 PCE/s |
+| Capacity flow q_max (trucks) | 1.04 PCE/s |
+
+### Rankine-Hugoniot shock speed at initial interface
+
+At the truck–Bf boundary (truck jam Ω=0.145 at v=0, Bf upstream Ω=0.035 at v=30 m/s):
+
+$$v_{\text{shock}} = \frac{Q_R - Q_L}{\Omega_R - \Omega_L} = \frac{1.05 - 0.00}{0.035 - 0.145} = -9.55 \text{ m/s} = -34.4 \text{ km/h}$$
+
+This backward shock speed is what drives the leftward-leaning front in the Hovmöller diagram.
+
+---
+
+## 11. Validation Status (41/41 PASS)
 
 | Module | Checks | Status | Key Result |
 |--------|--------|--------|-----------|

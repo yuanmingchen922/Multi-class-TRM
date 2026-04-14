@@ -17,10 +17,11 @@
     "Cell_Length_Delta_x_meters": 20.0,
     "Total_Lanes_L": 3,
     "Time_Step_Delta_t_seconds": 0.5,
-    "Velocity_Spectrum_Categories_N": 15,
+    "Velocity_Spectrum_Categories_N": 16,
     "Velocity_Spectrum_v_i_mps": [
-      2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0
+      0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0
     ],
+    "Note_v0": "v[0]=0 m/s added per supervisor suggestion: allows stationary traffic class in deep congestion.",
     "Global_v_max_mps": 30.0,
     "CFL_Condition_Validation": "Delta_t (0.5) <= Delta_x (20.0) / v_max (30.0) = 0.667. Strictly satisfied."
   },
@@ -43,8 +44,8 @@
       "eta_m_Singular_Barrier_Stiffness_Exponent": 4.5,
       "omega_0_Spontaneous_Anticipation_hz": 0.05,
       "v_A_ff_Free_Flow_Speed_Limit_mps": 14.0,
-      "i_thr_Speed_Index_0based": 6,
-      "Note": "v[6]=14.0 m/s is the truck free-flow cap. lambda_acc^(Bs)=0 for i>=i_thr."
+      "i_thr_Speed_Index_0based": 7,
+      "Note": "v[7]=14.0 m/s is the truck free-flow cap. lambda_acc^(Bs)=0 for i>=i_thr. Index shifted by 1 due to v[0]=0 addition."
     },
     "Class_Bf_Free_Car": {
       "m_index": 1,
@@ -75,7 +76,7 @@
   "Moving_Bottleneck_Reaction_Parameters": {
     "Description": "Parameters governing the Capture (Bf->Bs) and Release (Bs->Bf) reactions. NEW: P_block replaces E_trap/G escape gate. xi (lateral awareness) and eta_lat (escape gate exponent) removed.",
     "v_A_ff_mps": 14.0,
-    "i_thr_0based": 6,
+    "i_thr_0based": 7,
     "eta_block_Probabilistic_Blocking_Exponent": 2.0,
     "omega_0_BA_Spontaneous_Exposure_hz": 0.05,
     "beta_BA_Kinetic_Exposure_Rate_per_meter": 0.06,

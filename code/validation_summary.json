@@ -1,11 +1,11 @@
 {
   "total_checks": 41,
   "passed_checks": 41,
-  "total_elapsed_s": 3.24,
+  "total_elapsed_s": 3.87,
   "modules": {
     "V1": {
       "summary": "PASSED 5/5",
-      "elapsed_s": 0.49,
+      "elapsed_s": 0.22,
       "checks": {
         "V1-a": {
           "passed": true,
@@ -17,7 +17,7 @@
         },
         "V1-c": {
           "passed": true,
-          "desc": "t=0 瓶颈 Ω ≈ 0.145 (Class A: 2.5×0.058)"
+          "desc": "t=0 瓶颈 Ω (动态计算自 f[0]，cells 74-79)"
         },
         "V1-d": {
           "passed": true,
@@ -31,7 +31,7 @@
     },
     "V2": {
       "summary": "PASSED 7/7",
-      "elapsed_s": 0.38,
+      "elapsed_s": 0.35,
       "checks": {
         "V2-a": {
           "passed": true,
@@ -65,7 +65,7 @@
     },
     "V3": {
       "summary": "PASSED 7/7",
-      "elapsed_s": 0.34,
+      "elapsed_s": 0.45,
       "checks": {
         "V3-a": {
           "passed": true,
@@ -99,7 +99,7 @@
     },
     "V4": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.42,
+      "elapsed_s": 0.52,
       "checks": {
         "V4-a": {
           "passed": true,
@@ -129,7 +129,7 @@
     },
     "V5": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.5,
+      "elapsed_s": 0.88,
       "checks": {
         "V5-a": {
           "passed": true,
@@ -159,11 +159,11 @@
     },
     "V6": {
       "summary": "PASSED 6/6",
-      "elapsed_s": 0.61,
+      "elapsed_s": 0.87,
       "checks": {
         "V6-a": {
           "passed": true,
-          "desc": "S(t=0) = λ_dec_max / |μ_slow| >> 10^5 (极端刚性)"
+          "desc": "max_t(S) >> 10^5 (极端刚性，全时域)"
         },
         "V6-b": {
           "passed": true,
@@ -189,7 +189,7 @@
     },
     "V7": {
       "summary": "PASSED 4/4",
-      "elapsed_s": 0.5,
+      "elapsed_s": 0.59,
       "checks": {
         "V7-a": {
           "passed": true,

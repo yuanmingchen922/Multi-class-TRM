@@ -31,7 +31,7 @@ M       = 3          # vehicle classes: 0=A (truck), 1=Bf (free car), 2=Bs (trap
 
 dx      = 20.0       # cell length [m]
 dt      = 0.5        # time step [s]
-T_STEPS = 500        # total time steps → 250 s simulation
+T_STEPS = 1500       # total time steps → 750 s simulation
 
 # Speed spectrum v_i [m/s], i = 0..N-1
 # v[0]=0: completely stationary (jam), v[1..15]=2..30 m/s free-flow spectrum
@@ -90,11 +90,10 @@ def initialize_state():
     """Return f of shape (M=3, N, X, L)."""
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
-    # Class A (trucks, m=0): bottleneck at cells 74-79, v=2m/s (i=1, NOT i=0)
-    # Using i=1 (v=2 m/s) so trucks can advect and rarefy, as supervisor noted.
-    # v=0 bin remains available for deceleration dynamics but is not the initial state.
-    # Ω = 2.5 × 0.058 = 0.145 ≈ ρ_max  → extreme stiffness
-    f[0, 1, 74:80, :] = 0.058
+    # Class A (trucks, m=0): bottleneck at cells 74-79, v=2m/s (i=1)
+    # Density lowered 0.058→0.030: Ω = 2.5×0.030 = 0.075 (50% capacity)
+    # Provides acceleration headroom so trucks can rarefy toward v_A_ff=14 m/s.
+    f[0, 1, 74:80, :] = 0.030
 
     # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
     # Restored to 0.020 to preserve Bf circulation and feather structure in Hovmöller.

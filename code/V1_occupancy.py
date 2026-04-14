@@ -95,15 +95,16 @@ def run():
         print(f"  [V1-b] {tag}  min(Ω) = {global_min:.2e}  (违规步数: {violations_b})")
 
         # ── [V1-c] 初始瓶颈 ─────────────────────────────────────────────────
-        # Class A (m=0, w=2.5) at cells 74-79, i=0, density=0.058
-        # Expected Ω = 2.5 × 0.058 = 0.145
-        omega_t0 = omega_ds[0]                    # (X, L)
+        # Dynamically compute expected Ω from f[t=0] at bottleneck cells 74-79.
+        # expected = Σ_m Σ_i w[m] * f[m,i,74:80,:] (eq.1 applied to IC)
+        omega_t0   = omega_ds[0]                             # (X, L)
         bott_omega = omega_t0[74:80, :].mean()
-        expected   = w[0] * 0.058                 # = 0.145
+        f_t0       = f_ds[0]                                 # (M, N, X, L)
+        expected   = float((w[:, None, None, None] * f_t0[:, :, 74:80, :]).sum() / (6 * L))
         err_c = abs(bott_omega - expected)
         passed_c = err_c < 0.002
         results['checks']['V1-c'] = {
-            'desc': 't=0 瓶颈 Ω ≈ 0.145 (Class A: 2.5×0.058)',
+            'desc': 't=0 瓶颈 Ω (动态计算自 f[0]，cells 74-79)',
             'passed': passed_c, 'value': float(bott_omega),
             'expected': float(expected), 'abs_error': float(err_c)
         }
@@ -147,8 +148,8 @@ def run():
         ax.set_xlabel('Time [s]'); ax.set_ylabel(r'$\Omega$ [PCE/m]')
         ax.set_title('[V1-a] Global Max Occupancy Density (M=3 classes)')
         ax.legend(); ax.grid(alpha=0.3)
-        ax.annotate('Initial Class A Truck\nBottleneck, \u03a9\u22480.145',
-                    xy=(0, omega_max_per_t[0]), xytext=(20, 0.115),
+        ax.annotate(f'Initial Class A Truck\nBottleneck, \u03a9\u2248{omega_max_per_t[0]:.3f}',
+                    xy=(0, omega_max_per_t[0]), xytext=(20, 0.06),
                     arrowprops=dict(arrowstyle='->', color='orange'),
                     fontsize=9, color='orange')
 

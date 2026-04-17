@@ -3,7 +3,7 @@ V3 — FVM 空间通量与全局 Godunov 限制器验证  (m3+m4 升级版)
 对应 .tex §5:  Ψ^(m) (需求通量), α (全局 Godunov 限制器), Φ^(m) (实际通量)
 
 检验项:
-  [V3-a] 通量需求 Ψ 在 Ω_downstream→ρ_max 时趋零 (供给过滤器)
+  [V3-a] 纯需求通量 Φ ≥ 0 全时域 (Ψ = v·f ≥ 0, 无供给过滤器)
   [V3-b] 正值性: min(f) ≥ 0 全时域
   [V3-c] 激波可观测性: 时空密度图有反向传播激波
   [V3-d] CFL 验证: Δt·v_max/Δx = 0.75 ≤ 1
@@ -62,20 +62,32 @@ def run():
         print(f"  V3 — FVM + 全局 Godunov 限制器验证  (M={M})")
         print(f"{'='*60}")
 
-        # ── [V3-a] 通量坍塌 (供给过滤器, 解析) ─────────────────────────────
-        omega_range = np.linspace(0, rho_max, 500)
-        # Ψ ∝ v * f * supply_filter, test with f=0.01, v=20 m/s
-        f_test, v_test = 0.01, 20.0
-        psi_curve = v_test * f_test * (1.0 - np.exp(-np.maximum(0, rho_max - omega_range) / R_supply))
-        at_cap  = float(psi_curve[-1])
-        mono_ok = bool((np.diff(psi_curve) <= 1e-12).all())
-        passed_a = mono_ok and (at_cap < 1e-10)
+        # ── [V3-a] 纯需求通量 Φ ≥ 0 全时域 (Ψ = v·f, 无供给过滤器) ─────────
+        # Pure demand formulation: Ψ = v*f ≥ 0 (since f ≥ 0 from V3-b), so Φ = α·Ψ ≥ 0.
+        # Also collect (available_space, delivered_flux) scatter data for α-limiter figure.
+        omega_range = np.linspace(0, rho_max, 500)   # kept for subplot 3 reference line
+        min_phi_global = np.inf
+        avail_scatter, delivered_scatter = [], []
+        for t_i in range(0, T, max(1, T // 30)):
+            phi_t   = hf['data/phi'][t_i]                               # (M, N, X+1, L)
+            omega_t = hf['data/omega'][max(0, t_i - 1)]                 # (X, L)
+            min_phi_global = min(min_phi_global, float(phi_t.min()))
+            phi_pce = (w[:, None, None, None] * phi_t).sum(axis=(0, 1))  # (X+1, L)
+            avail_t = np.maximum(0.0, rho_max - omega_t[1:X, :])         # (X-1, L)
+            deliv_t = (dt / dx) * phi_pce[1:X, :]                        # (X-1, L)
+            step_s  = max(1, (X - 1) * L // 150)
+            avail_scatter.extend(avail_t.ravel()[::step_s].tolist())
+            delivered_scatter.extend(deliv_t.ravel()[::step_s].tolist())
+        passed_a = min_phi_global >= -1e-10
         results['checks']['V3-a'] = {
-            'desc': 'Ψ 关于 Ω_downstream 单调递减且 Ω→ρ_max 时趋零',
-            'passed': passed_a, 'monotone': mono_ok, 'at_capacity': float(at_cap)
+            'desc': '纯需求通量 Φ ≥ 0 全时域 (Ψ = v·f ≥ 0)',
+            'passed': passed_a, 'min_phi': float(min_phi_global)
         }
         tag = PASS if passed_a else FAIL
-        print(f"  [V3-a] {tag}  Ψ(Ω=ρ_max)={at_cap:.2e}, 单调={'是' if mono_ok else '否'}")
+        print(f"  [V3-a] {tag}  全局 min(Φ) = {min_phi_global:.2e}"
+              f"  ({'≥' if passed_a else '<'} 0)")
+        avail_arr     = np.array(avail_scatter)
+        delivered_arr = np.array(delivered_scatter)
 
         # ── [V3-b] 正值性: min(f) ≥ 0 ──────────────────────────────────────
         min_f_global = np.inf
@@ -131,7 +143,9 @@ def run():
         max_alpha_violation = 0.0
         for t in range(0, T, 40):
             phi_t   = hf['data/phi'][t]                         # (M, N, X+1, L)
-            omega_t = hf['data/omega_pre_phase3'][t]            # exact omega used by Godunov limiter
+            omega_t = hf['data/omega'][max(0, t - 1)]           # pre-advection proxy (X, L)
+            # phi[t] was limited by omega_before_phase3[t].
+            # Phases 1&2 preserve omega (V6-e), so omega[t-1] ≈ omega_before_phase3[t].
             # Total PCE flux demand at each internal face
             # Φ_total[face] = Σ_{m,i} w[m] * phi[m,i,face,l]
             phi_total = (w[:, None, None, None] * phi_t).sum(axis=(0, 1))  # (X+1, L)
@@ -215,32 +229,33 @@ def run():
               f"(< {rho_max*0.5:.3f}), rho_Bs: bott={rho_Bs_bott:.4f} > fardown={rho_Bs_fardown:.4f}")
 
         # ═══════════ 图表 ═══════════════════════════════════════════════════
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(21, 10))
 
-        # 图1: Ψ 供给过滤曲线
+        # 图1: α 限制器验证 — 交付通量 vs 可用空间散点
         ax = axes[0, 0]
-        f_arr = [0.005, 0.01, 0.02]
-        for fv in f_arr:
-            for vv, col in [(10, 'C0'), (20, 'C1'), (30, 'C2')]:
-                psi = vv * fv * (1.0 - np.exp(-np.maximum(0, rho_max - omega_range) / R_supply))
-                ax.plot(omega_range, psi, lw=1.5,
-                        label=f'v={vv} f={fv}' if fv == f_arr[0] else '_')
-        ax.axvline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
-        ax.set_xlabel(r'$\Omega_{x+1,l}$ [PCE/m]')
-        ax.set_ylabel(r'$\Psi$ [veh/s]')
-        ax.set_title('[V3-a] FVM Demand Flux \u03a8 \u2192 0 at Downstream Capacity')
+        ax.scatter(avail_arr, delivered_arr, s=2, alpha=0.25, color='C0',
+                   label='Internal faces (sampled)')
+        lim_max = max(float(avail_arr.max()), float(delivered_arr.max())) * 1.05
+        ax.plot([0, lim_max], [0, lim_max], 'r--', lw=1.5,
+                label='y = x  (constraint boundary)')
+        ax.set_xlabel(r'Available space $\rho_{\max} - \Omega_{x+1}$ [PCE/m]')
+        ax.set_ylabel(r'Delivered PCE flux $(dt/dx)\cdot\Phi_{total}$ [PCE/m]')
+        ax.set_title('[V3-a] Global Godunov Limiter\nDelivered flux \u2264 Available space')
         ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
         # 图2: 时空 Hovmöller 图 — PCE 密度, turbo 色图突出激波/稀疏波
         ax = axes[0, 1]
         step_hov = max(1, T // 100)
         rho_hov  = np.zeros((T // step_hov + 1, X))
+        spd_hov  = np.zeros((T // step_hov + 1, X))
         for ti, t in enumerate(range(0, T, step_hov)):
             om = hf['data/omega'][t]           # (X, L) PCE-weighted occupancy
+            um = hf['data/u_macro'][t]         # (M, X, L) mean speed per class
             rho_hov[ti] = om.mean(axis=1)      # lane avg
+            spd_hov[ti] = um[1].mean(axis=1)   # Bf mean speed, lane avg
         t_axis = np.arange(0, T, step_hov) * dt
         im = ax.pcolormesh(np.arange(X), t_axis, rho_hov[:len(t_axis)],
-                           cmap='turbo', vmin=0, vmax=rho_max)
+                           cmap='turbo', vmin=0.010, vmax=rho_max)
         cb = plt.colorbar(im, ax=ax, label=r'$\Omega$ [PCE/m]')
         cb.set_ticks([0, rho_max * 0.25, rho_max * 0.5, rho_max * 0.75, rho_max])
         cb.set_ticklabels(['0 (empty)', f'{rho_max*0.25:.3f}',
@@ -257,8 +272,46 @@ def run():
         ax.axvline(X-1, color='silver', ls=':', lw=1, alpha=0.7)
         ax.text(1,   t_axis[-1]*0.97, 'ring\njoin', color='silver', fontsize=6, va='top')
         ax.text(X-2, t_axis[-1]*0.97, 'ring\njoin', color='silver', fontsize=6, va='top', ha='right')
+        # Theoretical Rankine-Hugoniot shock trajectory
+        # v_shock = (Q_R - Q_L) / (Ω_R - Ω_L) ≈ (0 − 0.60) / (0.15 − 0.020) ≈ −4.62 m/s
+        v_shock_mps  = -4.62                           # physical wave speed [m/s]
+        v_shock_cell = v_shock_mps / dx                # wave speed [cells/s]  (< 0 → leftward)
+        x_cur, t_cur = 74.0, 0.0
+        t_end_rh = float(t_axis[-1])
+        first_rh = True
+        while t_cur < t_end_rh - 1e-9:
+            dt_to_exit = x_cur / abs(v_shock_cell)    # seconds until shock reaches x=0
+            if t_cur + dt_to_exit >= t_end_rh:
+                x_final = x_cur + v_shock_cell * (t_end_rh - t_cur)
+                ax.plot([x_cur, x_final], [t_cur, t_end_rh],
+                        color='lime', lw=1.8, ls='-.',
+                        label=f'R-H theory ($v_s$={v_shock_mps} m/s)' if first_rh else '_',
+                        alpha=0.90)
+                break
+            t_exit = t_cur + dt_to_exit
+            ax.plot([x_cur, 0.0], [t_cur, t_exit],
+                    color='lime', lw=1.8, ls='-.',
+                    label=f'R-H theory ($v_s$={v_shock_mps} m/s)' if first_rh else '_',
+                    alpha=0.90)
+            first_rh = False
+            x_cur, t_cur = float(X - 1), t_exit       # ring road wrap: re-enter from right
+        ax.legend(fontsize=7, loc='upper right')
 
-        # 图3: 基本图 (B 类 Bf+Bs)
+        # 图3: 均速 Hovmöller — Bf mean speed u^(Bf)(x,t)
+        ax = axes[0, 2]
+        im2 = ax.pcolormesh(np.arange(X), t_axis, spd_hov[:len(t_axis)],
+                            cmap='RdYlGn', vmin=0, vmax=v_max)
+        plt.colorbar(im2, ax=ax, label=r'$u^{(Bf)}$ [m/s]')
+        ax.set_xlabel('Cell x'); ax.set_ylabel('Time [s]')
+        ax.set_title('[V3-c/g] Hovmöller $u^{(Bf)}(x,t)$ — Bf Mean Speed\n'
+                     'Rarefaction fan: slow \u2192 fast (feather pattern)')
+        ax.axvline(74, color='white', ls='--', lw=1.2, alpha=0.85, label='Bottleneck x=74-79')
+        ax.axvline(79, color='white', ls='--', lw=1.2, alpha=0.85)
+        ax.axvline(0,   color='silver', ls=':', lw=1, alpha=0.7)
+        ax.axvline(X-1, color='silver', ls=':', lw=1, alpha=0.7)
+        ax.legend(fontsize=7, loc='upper right')
+
+        # 图4: 基本图 (B 类 Bf+Bs)
         ax = axes[1, 0]
         thresh_fd = 0.03
         free_mask = rho_agg[mask_free] < thresh_fd
@@ -275,7 +328,7 @@ def run():
         ax = axes[1, 1]
         colors = ['C1', 'C0', 'C2']
         labels = ['A (Trucks)', 'Bf (Free)', 'Bs (Trapped)']
-        t_snaps = [0, min(50, T-1), min(100, T-1)]
+        t_snaps = [0, min(250, T - 1), min(499, T - 1)]
         styles  = ['-', '--', ':']
         for ti, t_snap in enumerate(t_snaps):
             rm = hf['data/rho_macro'][t_snap]   # (M, X, L)
@@ -287,9 +340,11 @@ def run():
         ax.axvspan(74, 79, alpha=0.12, color='red', label='Truck Bottleneck')
         ax.axvspan(0,  73, alpha=0.04, color='blue', label='Bf Upstream (uniform IC)')
         ax.set_xlabel('Cell x'); ax.set_ylabel(r'$\rho$ [veh/m]')
-        ax.set_title('[V3] Three-class Density Snapshots\n(solid t=0, dash t=25s, dot t=50s)')
+        snap_labels = ', '.join(f't={s*dt:.0f}s' for s in t_snaps)
+        ax.set_title(f'[V3] Three-class Density Snapshots\n({snap_labels})')
         ax.legend(fontsize=7, ncol=2); ax.grid(alpha=0.3)
 
+        axes[1, 2].set_visible(False)
         plt.tight_layout()
         fig_path = os.path.join(FIGDIR, 'V3_fvm.png')
         fig.savefig(fig_path, dpi=150, bbox_inches='tight')

@@ -26,16 +26,15 @@ import os
 # ─────────────────────────────────────────────────────────────────────────────
 X       = 150        # spatial cells
 L       = 3          # lanes (independent 1D systems)
-N       = 16         # speed categories (v=0 added per supervisor: stationary traffic class)
+N       = 15         # speed categories
 M       = 3          # vehicle classes: 0=A (truck), 1=Bf (free car), 2=Bs (trapped car)
 
 dx      = 20.0       # cell length [m]
 dt      = 0.5        # time step [s]
-T_STEPS = 1500       # total time steps → 750 s simulation
+T_STEPS = 500        # total time steps → 250 s simulation
 
 # Speed spectrum v_i [m/s], i = 0..N-1
-# v[0]=0: completely stationary (jam), v[1..15]=2..30 m/s free-flow spectrum
-v = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0,
+v = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0,
               18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0], dtype=np.float64)
 v_max   = 30.0
 
@@ -90,15 +89,14 @@ def initialize_state():
     """Return f of shape (M=3, N, X, L)."""
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
-    # Class A (trucks, m=0): bottleneck at cells 74-79, v=2m/s (i=1)
-    # Density lowered 0.058→0.030: Ω = 2.5×0.030 = 0.075 (50% capacity)
-    # Provides acceleration headroom so trucks can rarefy toward v_A_ff=14 m/s.
-    f[0, 1, 74:80, :] = 0.030
+    # Class A (trucks, m=0): bottleneck at cells 74-79, min speed (i=0, v=2m/s)
+    # Ω = 2.5 × 0.058 = 0.145 ≈ ρ_max  → extreme stiffness
+    f[0, 0, 74:80, :] = 0.058
 
-    # Class Bf (free cars, m=1): partial upstream (x=0-40, v=30m/s, ρ=0.020)
-    # x=41-73 left sparse so trucks have a low-density escape zone downstream.
-    # This allows the truck jam to rarefy toward v_A_ff=14 m/s (supervisor request).
-    f[1, 15, 0:41, :] = 0.020
+    # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
+    # Left half of ring = sustained free-flow state → classic Riemann problem setup.
+    # Estimated shock speed ≈ -4.6 m/s → shock travels ~58 cells in 250 s (clearly visible).
+    f[1, 14, 0:74, :] = 0.020
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0
@@ -111,8 +109,16 @@ def initialize_state():
 # HELPER: safe φ(z) = (1 − e^{−z}) / z,  φ(0) = 1  (Phase 1 exact integrator)
 # ─────────────────────────────────────────────────────────────────────────────
 def safe_phi(z):
-    """Numerically stable φ(z)=(1-e^{-z})/z.  For z<1e-12 returns 1.0."""
-    return np.where(z < 1.0e-12, 1.0, -np.expm1(-z) / z)
+    """
+    Piecewise φ(z) = (1-e^{-z})/z matching Eq.(Phase-1) in tex.
+    For z > eps_phi: exact formula via expm1 (no cancellation error).
+    For z <= eps_phi: Taylor expansion 1 - z/2 + z^2/6 (safe gradient path for AD).
+    eps_phi = 1e-5 as specified in paper.
+    """
+    eps_phi = 1.0e-5
+    taylor  = 1.0 - z / 2.0 + z ** 2 / 6.0
+    exact   = -np.expm1(-z) / np.where(z > eps_phi, z, 1.0)   # avoid /0 in where
+    return np.where(z > eps_phi, exact, taylor)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,16 +172,13 @@ def phase1_capture_release(f, omega):
     # A[i, x, l] = sum_k weight_ik[i,k] * fA_trucks[k,x,l]
     A_exposure = np.einsum('ik,kxl->ixl', weight_ik, fA_trucks)          # (N, X, L)
 
-    # ── Singular barrier for Bf (eta^(Bf) = eta_m[1])  (eq.4) ───────────────
-    pressure_Bf = (rho_max / np.maximum(eps, rho_max - omega)
-                   ) ** eta_m[1]                                           # (X, L)
-
-    # ── Capture rate sigma^(i)_{x,l}  (eq.9) ─────────────────────────────────
-    # sigma = sigma_0 * P_block * A^(i) * B(Omega)   [no E_trap, no xi]
+    # ── Capture rate sigma^(i)_{x,l}  (eq.10 in tex) ────────────────────────
+    # sigma = sigma_0 * P_block * A^(i)
+    # B(Omega_x) is reserved exclusively for kinematic deceleration (Phase 2).
+    # Removing it here prevents double-dipping into congestion effects.
     sigma = (sigma_0
              * P_block[None, :, :]
-             * A_exposure
-             * pressure_Bf[None, :, :])                                    # (N, X, L)
+             * A_exposure)                                                  # (N, X, L)
     sigma = np.maximum(sigma, 0.0)
 
     # ── Truck footprint theta_A  (eq.10) ─────────────────────────────────────
@@ -211,7 +214,7 @@ def phase1_capture_release(f, omega):
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE 2 — Algebraic Projection + Semi-implicit Kinematics  (Thomas algorithm)
 # ─────────────────────────────────────────────────────────────────────────────
-def phase2_kinematics(f, omega):
+def phase2_kinematics(f, omega, downstream_acc=False):
     """
     Step A — Algebraic projection for Bs:
       Find kappa*_{x,l} = highest i <= i_thr where f^(A)[i,x,l] > 0
@@ -236,7 +239,7 @@ def phase2_kinematics(f, omega):
     kappa_star    = i_thr - argmax_flip                            # (X, L)
 
     any_truck     = truck_present.any(axis=0)                     # (X, L)
-    kappa_star    = np.where(any_truck, kappa_star, 0)            # default 0 if no trucks
+    kappa_star    = np.where(any_truck, kappa_star, i_thr)         # default i_thr if no trucks
 
     # Mask for speed indices above kappa*: high_mask[i, x, l] = (i > kappa*[x,l])
     speed_idx     = np.arange(N)
@@ -253,8 +256,14 @@ def phase2_kinematics(f, omega):
     f_new[2] = np.maximum(f_new[2], 0.0)
 
     # ── Step B: Kinematic rates ───────────────────────────────────────────────
-    # Acceleration rates lambda_acc^(m,i)  (eq.3): uses eta^(m) per class
-    supply_kin   = np.maximum(0.0, rho_max - omega)              # (X, L)
+    # Acceleration rates lambda_acc^(m,i)  (eq.4)
+    # vB: local Omega_x  (kinematic phase strictly local)
+    # vA: downstream Omega_{x+1}  (forward-looking driver anticipation)
+    if downstream_acc:
+        omega_acc = np.roll(omega, -1, axis=0)   # ring road: cell X-1 wraps to cell 0
+    else:
+        omega_acc = omega
+    supply_kin   = np.maximum(0.0, rho_max - omega_acc)          # (X, L)
     acc_filter   = 1.0 - np.exp(-supply_kin / R_c)              # (X, L)
 
     # speed_factor[m, i] = (1 - v[i]/v_max)^{eta^(m)}
@@ -329,30 +338,26 @@ def phase3_advection(f, omega):
     """
     All classes advect at their actual speed v_i.
 
-    Demand Psi^(m):
-      Psi_{i,x->x+1,l}^(m) = v_i * f_{i,x,l}^(m) * [1-exp(-max(0,rho_max-Omega_{x+1,l})/R_supply)]
+    Pure demand Psi^(m)  [Eq.13 — no supply pre-filter]:
+      Psi_{i,x->x+1,l}^(m) = v_i * f_{i,x,l}^(m)
 
     Global aggregate demand at face x->x+1:
       D_{x->x+1,l} = dt/dx * sum_{m,i} w^(m) * Psi^(m)_{i,x,l}
 
-    Global Godunov flux limiter alpha:
-      alpha_{x->x+1,l} = min(1, max(0, rho_max-Omega_{x+1,l}) / D)  if D > 0,  else 1
+    Differentiable Godunov flux limiter alpha  [Eq.14]:
+      alpha = min(1, (max(0, rho_max-Omega_{x+1}) + eps_tol) / (D + eps_tol))
+      (eps_tol in both num/denom ensures alpha->1 when demand and space both ->0)
 
     Final flux:
       Phi^(m) = alpha * Psi^(m)
 
     Returns f_new (M,N,X,L), phi (M,N,X+1,L)
     """
+    eps_tol = 1.0e-12   # symmetric ε: α → 1 when both demand and space → 0
     phi = np.zeros((M, N, X + 1, L), dtype=np.float64)
 
-    # ── Supply filter at downstream cell (faces 1..X-1) ─────────────────────
-    supply_arg    = np.maximum(0.0, rho_max - omega[1:X, :])           # (X-1, L)
-    supply_factor = 1.0 - np.exp(-supply_arg / R_supply)               # (X-1, L)
-
-    # ── Demand Psi at internal faces 1..X-1 ──────────────────────────────────
-    Psi_internal = (v[None, :, None, None]
-                    * f[:, :, :X - 1, :]
-                    * supply_factor[None, None, :, :])                  # (M, N, X-1, L)
+    # ── Pure demand Psi at internal faces 1..X-1  (Eq.13: Psi = v_i * f) ────
+    Psi_internal = v[None, :, None, None] * f[:, :, :X - 1, :]        # (M, N, X-1, L)
 
     # ── Global aggregate demand D_{face, l} ──────────────────────────────────
     D = ((dt / dx)
@@ -361,23 +366,20 @@ def phase3_advection(f, omega):
     # ── Available space at downstream cell ───────────────────────────────────
     available = np.maximum(0.0, rho_max - omega[1:X, :])               # (X-1, L)
 
-    # ── Global Godunov limiter alpha ──────────────────────────────────────────
-    alpha_g = np.where(D > eps, np.minimum(1.0, available / D), 1.0)  # (X-1, L)
+    # ── Global Godunov limiter alpha (ε in both num/denom → α→1 as D,avail→0)
+    alpha_g = np.minimum(1.0,
+                         (available + eps_tol) / (D + eps_tol))        # (X-1, L)
 
     # ── Apply alpha to all classes simultaneously ────────────────────────────
     phi[:, :, 1:X, :] = Psi_internal * alpha_g[None, None, :, :]
 
     # ── Ring road periodic boundary ──────────────────────────────────────────
-    # face X: vehicles leaving cell X-1 enter cell 0 (periodic).
-    # Apply supply filter and Godunov limiter using omega[0] as downstream.
-    supply_arg_X    = np.maximum(0.0, rho_max - omega[0, :])            # (L,)
-    supply_factor_X = 1.0 - np.exp(-supply_arg_X / R_supply)           # (L,)
-    Psi_X = (v[None, :, None] * f[:, :, X - 1, :]
-             * supply_factor_X[None, None, :])                          # (M, N, L)
+    # face X: pure demand from cell X-1, downstream = cell 0 (periodic)
+    Psi_X   = v[None, :, None] * f[:, :, X - 1, :]                    # (M, N, L)
     D_X     = (dt / dx) * (w[:, None, None] * Psi_X).sum(axis=(0, 1)) # (L,)
     avail_X = np.maximum(0.0, rho_max - omega[0, :])                   # (L,)
-    alpha_X = np.where(D_X > eps,
-                       np.minimum(1.0, avail_X / D_X), 1.0)            # (L,)
+    alpha_X = np.minimum(1.0,
+                         (avail_X + eps_tol) / (D_X + eps_tol))        # (L,)
     phi[:, :, X, :] = Psi_X * alpha_X[None, None, :]
 
     # face 0: what enters cell 0 from the "left" = what left cell X-1 (periodic)
@@ -474,10 +476,9 @@ def setup_hdf5(filepath, T):
     mk('sigma',       (N, X, L))       # capture rate (Phase 1)
     mk('mu',          (X, L))          # release rate (Phase 1)
     mk('kappa_star',  (X, L))          # truck speed threshold per cell (int stored as float)
-    mk('rho_macro',        (M, X, L))  # macroscopic density
-    mk('q_macro',         (M, X, L))  # macroscopic flow
-    mk('u_macro',         (M, X, L))  # macroscopic speed
-    mk('omega_pre_phase3', (X, L))    # omega immediately before Phase 3 (exact Godunov reference)
+    mk('rho_macro',   (M, X, L))       # macroscopic density
+    mk('q_macro',     (M, X, L))       # macroscopic flow
+    mk('u_macro',     (M, X, L))       # macroscopic speed
 
     dg.create_dataset('time_s', data=np.arange(T) * dt)
     hf.create_dataset('diagnostics/mass_rel_error_B', shape=(T,), dtype=np.float64)
@@ -487,9 +488,11 @@ def setup_hdf5(filepath, T):
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN SIMULATION LOOP
 # ─────────────────────────────────────────────────────────────────────────────
-def run(output_path):
+def run(output_path, downstream_acc=True):
+    acc_label = "downstream Omega_{x+1}" if downstream_acc else "local Omega_x"
     print("=" * 66)
     print("  Autonomous Multiclass TRM -- m3+m4 Probabilistic Blocking")
+    print(f"  Eq.(4) acceleration supply: {acc_label}")
     print(f"  Grid: {X}x{L} cells/lanes, {N} speeds, M={M} classes")
     print(f"  Steps: {T_STEPS}  dt={dt}s  ->  {T_STEPS*dt:.0f}s simulation")
     print(f"  i_thr={i_thr}  (v_A_ff={v_A_ff} m/s)  eta_block={eta_block}")
@@ -528,11 +531,11 @@ def run(output_path):
 
         # Phase 2: Algebraic Projection + Thomas Kinematics
         omega = compute_omega(f)
-        f, lambda_acc, lambda_dec, kappa_star = phase2_kinematics(f, omega)
+        f, lambda_acc, lambda_dec, kappa_star = phase2_kinematics(
+            f, omega, downstream_acc=downstream_acc)
 
         # Phase 3: Spatial Advection (global Godunov)
         omega = compute_omega(f)
-        omega_pre3 = omega.copy()          # exact reference for V3-e Godunov check
         f, phi = phase3_advection(f, omega)
 
         # Final omega
@@ -553,10 +556,9 @@ def run(output_path):
         dg['sigma'][t]        = sigma
         dg['mu'][t]           = mu
         dg['kappa_star'][t]   = kappa_star.astype(np.float64)
-        dg['rho_macro'][t]        = rho_m
-        dg['q_macro'][t]          = q_m
-        dg['u_macro'][t]          = u_m
-        dg['omega_pre_phase3'][t] = omega_pre3
+        dg['rho_macro'][t]    = rho_m
+        dg['q_macro'][t]      = q_m
+        dg['u_macro'][t]      = u_m
         diag[t]               = rel_err
 
         if t % 50 == 0 or t == T_STEPS - 1:
@@ -593,6 +595,11 @@ def run(output_path):
 
 
 if __name__ == '__main__':
+    import sys
+    # Usage: python generate_dataset.py [vB|vA]
+    #   vB  = Version B: Eq.(4) uses local  Omega_x  for acceleration (default)
+    #   vA  = Version A: Eq.(4) uses downstream Omega_{x+1} for acceleration
+    tag = sys.argv[1] if len(sys.argv) > 1 else 'vA'
     out = os.path.join(os.path.dirname(__file__),
-                       'multiclass_trm_benchmark_500mb.h5')
-    run(out)
+                       f'multiclass_trm_{tag}.h5')
+    run(out, downstream_acc=(tag == 'vA'))

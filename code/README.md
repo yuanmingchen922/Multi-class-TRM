@@ -1,4 +1,4 @@
-# Multiclass TRM — Autonomous Traffic Relaxation Model
+# Multiclass TRM -- Mingchen Yuan, my2878@columbia.edu
 
 > **Branch**: main
 > **Model**: Asymmetric kinematics (vA) with pure demand Ψ, ring-road BC

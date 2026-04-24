@@ -34,7 +34,7 @@ M       = 3
 
 dx      = 20.0
 dt      = 0.5
-T_STEPS = 500        # 250 s simulation
+T_STEPS = 200        # 100 s simulation (clean Riemann before ring-wrap)
 
 v = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0,
               18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0], dtype=np.float64)
@@ -92,12 +92,13 @@ def initialize_state():
     """
     Riemann problem without moving bottleneck.
 
-    Left  (x=0-74):   sparse free flow  — Bf at v=30 m/s, rho=0.010
-    Right (x=75-149): dense jam          — Bf at v=2  m/s, rho=0.070
+    Left  (x=0-74):   very sparse free flow — Bf at v=30 m/s, rho=0.005
+    Right (x=75-149): strong jam            — Bf at v=2  m/s, rho=0.120
 
     Estimated shock speed (Rankine-Hugoniot):
-      Q_L = 0.010 x 30 = 0.300,  Q_R = 0.070 x 2 = 0.140
-      v_shock = (0.140-0.300)/(0.070-0.010) = -2.67 m/s  (backward ~33 cells in 250s)
+      Q_L = 0.005 × 30 = 0.150,  Q_R = 0.120 × 2 = 0.240
+      v_shock = (0.240 - 0.150)/(0.120 - 0.005) = +0.78 m/s  (rightward shock)
+      (Actual dynamics dominated by rarefaction + ring wrap.)
     """
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
@@ -105,8 +106,8 @@ def initialize_state():
     # f[0, ...] stays at background noise (effectively zero)
 
     # Class Bf: Riemann discontinuity at x=75
-    f[1, 14, 0:75,  :] = 0.010   # upstream: sparse, v=30 m/s
-    f[1,  0, 75:150, :] = 0.070  # downstream: dense jam, v=2 m/s
+    f[1, 14, 0:75,  :] = 0.005   # upstream: very sparse, v=30 m/s
+    f[1,  0, 75:150, :] = 0.120  # downstream: strong jam, v=2 m/s (Ω=0.12 ≈ 80% ρ_max)
 
     # Class Bs: zero
     f[2, :, :, :] = 0.0
@@ -305,10 +306,14 @@ def plot_hovmoller(h5_path, fig_path):
     plt.colorbar(im, ax=ax, label=r'$\Omega$ [PCE/m]')
     ax.axvline(x_interface, color=interface_color, ls='--', lw=1.5,
                label='Initial interface (cell 75)')
-    # Theoretical shock: v_shock = -2.67 m/s → -2.67/dx cells/s from cell 75
+    # Theoretical R-H wave speed for new IC:
+    # Q_L = 0.005×30 = 0.150, Q_R = 0.120×2 = 0.240
+    # v_shock = (Q_R - Q_L)/(ρ_R - ρ_L) = 0.090/0.115 = +0.78 m/s (rightward)
+    v_rh    = 0.78
     t_arr   = np.array([0, T_STEPS * dt])
-    x_shock = x_interface + (-2.67 / dx) * t_arr   # [cells]
-    ax.plot(x_shock, t_arr, color='white', lw=1.5, alpha=0.9, label='Theoretical shock')
+    x_shock = x_interface + (v_rh / dx) * t_arr   # [cells]
+    ax.plot(x_shock, t_arr, color='white', lw=1.5, alpha=0.9,
+            label=f'R-H wave ({v_rh:+.2f} m/s)')
     ax.set_xlabel('Cell x')
     ax.set_ylabel('Time [s]')
     ax.set_title(r'Occupancy $\Omega(x,t)$  [Hovmöller]')
@@ -340,7 +345,7 @@ def run(output_path):
     print("  Multiclass TRM — No-Bottleneck Baseline (Riemann IC)")
     print(f"  Grid: {X}x{L}, {N} speeds, M={M} classes")
     print(f"  Steps: {T_STEPS}  dt={dt}s  ->  {T_STEPS*dt:.0f}s")
-    print(f"  IC: Bf sparse (rho=0.010, v=30m/s) | Bf dense (rho=0.070, v=2m/s)")
+    print(f"  IC: Bf sparse (rho=0.005, v=30m/s) | Bf dense (rho=0.120, v=2m/s)")
     print(f"  No trucks. Periodic (ring road) BC.")
     print(f"  Output: {output_path}")
     print("=" * 66)

@@ -31,7 +31,7 @@ sys.path.insert(0, BASE)
 import V1_occupancy
 import V2_kinematics
 import V3_fvm
-import V4_lateral
+import V4_probability
 import V5_mass
 import V6_stiffness
 import V7_reactions
@@ -93,7 +93,7 @@ def run_all():
         ('V1', V1_occupancy),
         ('V2', V2_kinematics),
         ('V3', V3_fvm),
-        ('V4', V4_lateral),
+        ('V4', V4_probability),
         ('V5', V5_mass),
         ('V6', V6_stiffness),
         ('V7', V7_reactions),

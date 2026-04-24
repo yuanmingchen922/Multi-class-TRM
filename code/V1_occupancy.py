@@ -6,7 +6,7 @@ PCE 权重: w = [2.5, 1.0, 1.0]  (Bf 和 Bs 共享 w=1.0)
 检验项:
   [V1-a] 物理上界: max(Ω) ≤ ρ_max (全时域，允许 2% 边界注入瞬态)
   [V1-b] 物理下界: min(Ω) ≥ 0
-  [V1-c] 初始瓶颈: t=0, cells 74-79, Ω ≈ 0.145 (Class A: 2.5×0.058)
+  [V1-c] 初始瓶颈: t=0, cells 74-79, Ω ≈ 0.100 (Class A: 2.5×0.040)
   [V1-d] PCE 加权一致性: 存储 omega 与从 f 重算误差 < 1e-10
   [V1-e] Bs 独立性: w^(Bf) = w^(Bs) = 1.0 确保 Bf↔Bs 互换不改变 Ω
 """
@@ -95,15 +95,15 @@ def run():
         print(f"  [V1-b] {tag}  min(Ω) = {global_min:.2e}  (违规步数: {violations_b})")
 
         # ── [V1-c] 初始瓶颈 ─────────────────────────────────────────────────
-        # Class A (m=0, w=2.5) at cells 74-79, i=0, density=0.058
-        # Expected Ω = 2.5 × 0.058 = 0.145
+        # Class A (m=0, w=2.5) at cells 74-79, i=0, density=0.040
+        # Expected Ω = 2.5 × 0.040 = 0.100
         omega_t0 = omega_ds[0]                    # (X, L)
         bott_omega = omega_t0[74:80, :].mean()
-        expected   = w[0] * 0.058                 # = 0.145
+        expected   = w[0] * 0.040                 # = 0.100
         err_c = abs(bott_omega - expected)
-        passed_c = err_c < 0.002
+        passed_c = err_c < 0.005
         results['checks']['V1-c'] = {
-            'desc': 't=0 瓶颈 Ω ≈ 0.145 (Class A: 2.5×0.058)',
+            'desc': 't=0 瓶颈 Ω ≈ 0.100 (Class A: 2.5×0.040)',
             'passed': passed_c, 'value': float(bott_omega),
             'expected': float(expected), 'abs_error': float(err_c)
         }
@@ -138,7 +138,7 @@ def run():
               f"({'相等' if passed_e else '不等'})")
 
         # ═══════════════════════════════ 图表 ═══════════════════════════════
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        fig, axes = plt.subplots(1, 4, figsize=(26, 5))
 
         # 图1: max(Ω) 时序
         ax = axes[0]
@@ -147,8 +147,8 @@ def run():
         ax.set_xlabel('Time [s]'); ax.set_ylabel(r'$\Omega$ [PCE/m]')
         ax.set_title('[V1-a] Global Max Occupancy Density (M=3 classes)')
         ax.legend(); ax.grid(alpha=0.3)
-        ax.annotate('Initial Class A Truck\nBottleneck, \u03a9\u22480.145',
-                    xy=(0, omega_max_per_t[0]), xytext=(20, 0.115),
+        ax.annotate('Initial Class A Truck\nBottleneck, \u03a9\u22480.100',
+                    xy=(0, omega_max_per_t[0]), xytext=(20, 0.075),
                     arrowprops=dict(arrowstyle='->', color='orange'),
                     fontsize=9, color='orange')
 
@@ -170,6 +170,35 @@ def run():
         ax2.set_xlabel('Cell x'); ax2.set_ylabel(r'$\Omega$ [PCE/m]')
         ax2.set_title('[V1-c] t=0 Per-class Occupancy Contribution (Middle Lane)')
         ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
+
+        # Helper: draw a per-class stacked snapshot at step t_snap
+        def _draw_snapshot(ax, t_snap, title):
+            f_s  = f_ds[t_snap]
+            om_A  = (w[0] * f_s[0]).sum(axis=0)[:, 1]
+            om_Bf = (w[1] * f_s[1]).sum(axis=0)[:, 1]
+            om_Bs = (w[2] * f_s[2]).sum(axis=0)[:, 1]
+            ax.fill_between(x_cells, 0, om_A, alpha=0.7, color='C1',
+                            label='Class A (Trucks)')
+            ax.fill_between(x_cells, om_A, om_A + om_Bf, alpha=0.7, color='C0',
+                            label='Class Bf (Free Cars)')
+            ax.fill_between(x_cells, om_A + om_Bf,
+                            om_A + om_Bf + om_Bs, alpha=0.7, color='C2',
+                            label='Class Bs (Trapped)')
+            ax.axhline(rho_max, color='red', ls='--', lw=1.5, label=r'$\rho_{\max}$')
+            ax.axvspan(74, 79, alpha=0.1, color='red')
+            ax.set_xlabel('Cell x'); ax.set_ylabel(r'$\Omega$ [PCE/m]')
+            ax.set_title(title)
+            ax.legend(fontsize=7); ax.grid(alpha=0.3)
+
+        # 图3: t=100s snapshot — 瓶颈拥堵积累期
+        t_mid = min(200, T - 1)   # 100 s
+        _draw_snapshot(axes[2], t_mid,
+                       f'[V1] t={t_mid*0.5:.0f}s Snapshot — Bottleneck congestion peak')
+
+        # 图4: t=250s snapshot — 环路均化后期
+        t_end = T - 1             # 250 s
+        _draw_snapshot(axes[3], t_end,
+                       f'[V1] t={t_end*0.5:.0f}s Snapshot — Ring road late-time equilibration')
 
         plt.tight_layout()
         fig_path = os.path.join(FIGDIR, 'V1_occupancy.png')

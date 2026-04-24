@@ -89,9 +89,10 @@ def initialize_state():
     """Return f of shape (M=3, N, X, L)."""
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
-    # Class A (trucks, m=0): bottleneck at cells 74-79, min speed (i=0, v=2m/s)
-    # Ω = 2.5 × 0.058 = 0.145 ≈ ρ_max  → extreme stiffness
-    f[0, 0, 74:80, :] = 0.058
+    # Class A (trucks, m=0): bottleneck at cells 74-79, TRUCK FREE-FLOW SPEED
+    # i=6 corresponds to v=14 m/s = v_A_ff (truck free-flow speed)
+    # Ω = 2.5 × 0.040 = 0.100 ≈ 67% ρ_max  → meaningful but non-sealing bottleneck
+    f[0, 6, 74:80, :] = 0.040
 
     # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
     # Left half of ring = sustained free-flow state → classic Riemann problem setup.

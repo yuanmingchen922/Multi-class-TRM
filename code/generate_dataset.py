@@ -48,8 +48,12 @@ eps      = 1.0e-8    # regularizer
 w = np.array([2.5, 1.0, 1.0], dtype=np.float64)
 
 # Per-class kinematic parameters [A, Bf, Bs]
+# 2026-04-28: η^(A) = 1.5 < η^(Bf) = 2.0 (consistent with .tex "softer trucks")
+# Empirical η scan showed 1.5 sustains trucks at 9.2 m/s while preserving Bs
+# oscillation amplitude (η=1.0 broke physics; η=2.5 over-decelerates trucks to 6.7).
 alpha   = np.array([0.35, 1.50, 1.50], dtype=np.float64)  # base acceleration [Hz]
-eta_m   = np.array([4.5,  2.0,  2.0 ], dtype=np.float64)  # barrier stiffness exponent
+eta_m   = np.array([1.5,  2.0,  2.0 ], dtype=np.float64)  # barrier stiffness exponent
+R_c_arr = np.array([0.05, 0.05, 0.05], dtype=np.float64)  # per-class supply relaxation [PCE/m]
 omega_0 = np.array([0.05, 0.01, 0.01], dtype=np.float64)  # spontaneous anticipation [Hz]
 
 # Beta kinetic collision kernel (3×3): beta[m, n]  (with /rho_max in deceleration)
@@ -60,6 +64,9 @@ beta = np.array([
 ], dtype=np.float64)
 
 # Moving bottleneck parameters
+# SUPERVISOR'S u>0 RECIPE A (2026-04-27):
+#   u = ½V = 15 m/s; closest grid point v[6]=14 m/s ≈ ½V ✓
+#   "set their reference density to ½ of ρ_cr and their speed to ½ of V"
 v_A_ff     = 14.0   # truck free-flow speed limit [m/s] → i_thr = 6
 i_thr      = int(np.searchsorted(v, v_A_ff, side='right') - 1)  # = 6 (v[6]=14.0)
 eta_block  = 2.0    # probabilistic blocking exponent (Eq. 8)
@@ -89,15 +96,16 @@ def initialize_state():
     """Return f of shape (M=3, N, X, L)."""
     f = np.full((M, N, X, L), 1.0e-5, dtype=np.float64)
 
-    # Class A (trucks, m=0): bottleneck at cells 74-79, TRUCK FREE-FLOW SPEED
-    # i=6 corresponds to v=14 m/s = v_A_ff (truck free-flow speed)
-    # Ω = 2.5 × 0.040 = 0.100 ≈ 67% ρ_max  → meaningful but non-sealing bottleneck
-    f[0, 6, 74:80, :] = 0.040
-
-    # Class Bf (free cars, m=1): uniform upstream (x=0-73, v=30m/s, ρ=0.020)
-    # Left half of ring = sustained free-flow state → classic Riemann problem setup.
-    # Estimated shock speed ≈ -4.6 m/s → shock travels ~58 cells in 250 s (clearly visible).
-    f[1, 14, 0:74, :] = 0.020
+    # 2026-04-30: IC ramped up per supervisor guidance ("ramp up the initial
+    # conditions for the effects to be more visible" since Greenshields-like
+    # FD gives less pronounced moving-bottleneck effects than triangular).
+    # Hard constraint: ρ_truck (PCE) < ρ_eff_cr = 0.041 (free-flow regime).
+    #   ρ_truck (PCE) = 0.035 ≈ 85% ρ_eff_cr (just below critical, max bottleneck)
+    #   ρ_car          = 0.045 (allows true upstream pile-up to ρ_max)
+    # IC scan showed this config gives Bs peak ~0.23 (10× the strict recipe),
+    # upstream pile-up to 0.143 ≈ ρ_max, while keeping trucks at ~8.9 m/s.
+    f[0, 6, 74:80, :] = 0.014     # trucks at i=6 (v=14 m/s = ½V), PCE = 0.035
+    f[1, 14, 0:74, :] = 0.045     # cars at v=30 m/s, density 0.045
 
     # Class Bs (trapped cars, m=2): starts at zero everywhere
     f[2, :, :, :] = 0.0
@@ -257,22 +265,27 @@ def phase2_kinematics(f, omega, downstream_acc=False):
     f_new[2] = np.maximum(f_new[2], 0.0)
 
     # ── Step B: Kinematic rates ───────────────────────────────────────────────
-    # Acceleration rates lambda_acc^(m,i)  (eq.4)
-    # vB: local Omega_x  (kinematic phase strictly local)
-    # vA: downstream Omega_{x+1}  (forward-looking driver anticipation)
+    # u=0 EXPERIMENT: Phase 2 uses PCE-weighted Ω (matches supervisor's framework
+    # where cars see ρ_car + ρ_truck in PCE space). Truck self-trap is not a risk
+    # here because v_A_ff=2 m/s pins trucks at i=0 regardless of B(Ω).
     if downstream_acc:
-        omega_acc = np.roll(omega, -1, axis=0)   # ring road: cell X-1 wraps to cell 0
+        omega_acc = np.roll(omega, -1, axis=0)   # ring road wrap
     else:
         omega_acc = omega
-    supply_kin   = np.maximum(0.0, rho_max - omega_acc)          # (X, L)
-    acc_filter   = 1.0 - np.exp(-supply_kin / R_c)              # (X, L)
+    supply_kin   = np.maximum(0.0, rho_max - omega_acc)         # (X, L)
+    acc_filter_class = 1.0 - np.exp(-supply_kin[None, :, :] / R_c_arr[:, None, None])  # (M, X, L)
 
-    # speed_factor[m, i] = (1 - v[i]/v_max)^{eta^(m)}
-    speed_factor = (1.0 - v[None, :] / v_max) ** eta_m[:, None] # (M, N)
+    # Per-class maximum speed: trucks and stuck-cars cap at v_A_ff = 14 m/s,
+    # free cars cap at global v_max = 30 m/s. This prevents trucks from being
+    # artificially throttled by the global v_max=30 (which they can never reach).
+    # speed_factor[m, i] = max(0, 1 - v[i]/v_max^(m))^{eta^(m)}
+    v_max_class = np.array([v_A_ff, v_max, v_A_ff], dtype=np.float64)   # A, Bf, Bs
+    v_ratio = v[None, :] / v_max_class[:, None]                         # (M, N)
+    speed_factor = np.maximum(0.0, 1.0 - v_ratio) ** eta_m[:, None]    # (M, N)
 
     lambda_acc = (alpha[:, None, None, None]
                   * speed_factor[:, :, None, None]
-                  * acc_filter[None, None, :, :])                # (M, N, X, L)
+                  * acc_filter_class[:, None, :, :])              # (M, N, X, L) per-class R_c
     # Dirichlet upper bound: no acceleration from top speed bin
     lambda_acc[:, N - 1, :, :] = 0.0
     # Bs Acceleration Blockade: lambda_acc^(Bs)[i >= i_thr] = 0
@@ -293,7 +306,7 @@ def phase2_kinematics(f, omega, downstream_acc=False):
 
     interaction = v[None, :, None, None] * cum_bwf - cum_vbwf   # (M, N, X, L)
 
-    # Singular pressure barrier B(Omega)^{eta^(m)}
+    # u=0 EXPERIMENT: Singular barrier uses Ω (matches supervisor's PCE framework).
     pressure = (rho_max / np.maximum(eps, rho_max - omega[None, None, :, :])
                 ) ** eta_m[:, None, None, None]                  # (M, N, X, L)
 

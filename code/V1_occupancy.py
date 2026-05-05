@@ -95,15 +95,17 @@ def run():
         print(f"  [V1-b] {tag}  min(Ω) = {global_min:.2e}  (违规步数: {violations_b})")
 
         # ── [V1-c] 初始瓶颈 ─────────────────────────────────────────────────
-        # Class A (m=0, w=2.5) at cells 74-79, i=0, density=0.040
-        # Expected Ω = 2.5 × 0.040 = 0.100
+        # 2026-04-30 IC: ramped up per supervisor guidance.
+        # Class A at cells 74-79: raw density=0.014, PCE=0.035 (~85% ρ_eff_cr).
+        # Cars (rho=0.045) are at cells 0-73, NOT in truck zone.
+        # Expected Ω at truck cells = 2.5 × 0.014 = 0.035 (+ small background)
         omega_t0 = omega_ds[0]                    # (X, L)
         bott_omega = omega_t0[74:80, :].mean()
-        expected   = w[0] * 0.040                 # = 0.100
+        expected   = w[0] * 0.014                 # = 0.035
         err_c = abs(bott_omega - expected)
         passed_c = err_c < 0.005
         results['checks']['V1-c'] = {
-            'desc': 't=0 瓶颈 Ω ≈ 0.100 (Class A: 2.5×0.040)',
+            'desc': 't=0 瓶颈 Ω ≈ 0.025 (Class A: 2.5×0.010 PCE = ½ ρ_eff_cr)',
             'passed': passed_c, 'value': float(bott_omega),
             'expected': float(expected), 'abs_error': float(err_c)
         }

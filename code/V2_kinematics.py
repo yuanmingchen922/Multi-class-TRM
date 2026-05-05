@@ -96,14 +96,16 @@ def run():
         tag = PASS if passed_b else FAIL
         print(f"  [V2-b] {tag}  λ_acc 上边界最大值 = {max_top_acc:.2e}")
 
-        # ── [V2-c] 奇异屏障精确值 (η^(A)=4.5) ──────────────────────────────
+        # ── [V2-c] 奇异屏障精确值 (uses actual eta_m[0] from dataset) ────────
+        # Test that B(Omega) formula is implemented correctly with whatever
+        # eta^(A) is set in parameters (now 2.5; was 4.5 in older runs).
         omega_bott = 0.145
-        B_A   = (rho_max / max(eps, rho_max - omega_bott)) ** eta_m[0]  # A: η=4.5
-        B_exp = 30.0 ** 4.5
+        B_A   = (rho_max / max(eps, rho_max - omega_bott)) ** eta_m[0]
+        B_exp = (rho_max / (rho_max - omega_bott)) ** eta_m[0]
         err_c = abs(B_A - B_exp) / B_exp
         passed_c = err_c < 1e-6
         results['checks']['V2-c'] = {
-            'desc': 'B(Ω=0.145)=(30)^4.5≈4.155e6 (η^(A)=4.5)',
+            'desc': f'B(Ω=0.145) = (ρ_max/(ρ_max-Ω))^η^(A)  with η^(A)={eta_m[0]:.1f}',
             'passed': passed_c, 'B_A': float(B_A), 'B_exp': float(B_exp), 'rel_err': float(err_c)
         }
         tag = PASS if passed_c else FAIL

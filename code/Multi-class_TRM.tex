@@ -57,21 +57,23 @@ A trapped car is strictly forbidden from accelerating past the current actual ph
 \end{equation}
 
 \section{Internal Kinematics ($\lambda$): Asymmetric Spatial Anticipation}
-Velocity transitions strictly occur between adjacent states ($|i-j|\le 1$) with sealed boundary conditions. The kinematic operators embody a physically motivated \textbf{asymmetry}: deceleration is governed strictly by the \emph{local} state $\Omega_x$ (a driver brakes in immediate response to surrounding congestion), whereas acceleration employs a one-cell \emph{forward-looking} supply filter on $\Omega_{x+1}$ (a driver only opens the throttle upon perceiving available space ahead). This asymmetric design preserves the hyperbolic shock-formation mechanism of the deceleration operator while preventing trucks from being artificially locked at low speed by their own PCE footprint during acceleration.
+Velocity transitions strictly occur between adjacent states ($|i-j|\le 1$) with sealed boundary conditions. The kinematic operators embody a physically motivated \textbf{asymmetry}: deceleration is governed strictly by the \emph{local} state $\Omega_x$ (a driver brakes in immediate response to surrounding congestion), whereas acceleration employs a one-cell \emph{forward-looking} supply filter on $\Omega_{x+1}$ (a driver only opens the throttle upon perceiving available space ahead).
 
-A vehicle's acceleration capability organically decays as it approaches its physical maximum speed. The supply filter evaluates the \textbf{downstream congestion density} $\Omega_{x+1}$, capturing forward-looking driver anticipation:
+A crucial design choice: kinematic decisions use the \textbf{PCE-weighted occupancy} $\Omega_x$, ensuring strict dimensional homogeneity with $\rho_{\max}$ (a PCE-equivalent jam density). This preserves the same effective road-capacity metric across all three phases (Phase 1 $P_{block}$, Phase 2 $\lambda$ and $\mathcal{B}$, Phase 3 advection limiter $\alpha$). To prevent the ``PCE self-trapping'' artifact whereby heavy trucks would otherwise decelerate themselves via their own PCE=2.5 footprint, we adopt \textbf{class-specific kinematic stiffness} $\eta^{(m)}$: trucks (Class~A) use a softer exponent $\eta^{(A)} < \eta^{(Bf)} = \eta^{(Bs)}$ so that $\mathcal{B}(\Omega_x)$ remains moderate at the truck PCE density and trucks can sustain their free-flow speed in light traffic.
+
+A vehicle's acceleration capability organically decays as it approaches its class-specific physical maximum speed $v_{\max}^{(m)}$ (trucks and stuck cars: $v_{\max}^{(A)} = v_{\max}^{(Bs)} = 14$~m/s; free cars: $v_{\max}^{(Bf)} = 30$~m/s). The supply filter evaluates the \textbf{downstream PCE-weighted occupancy} $\Omega_{x+1}$, capturing forward-looking driver anticipation:
 \begin{equation}
-\lambda_{i\rightarrow i+1}^{(m)} = a_{i}^{(m)}\left(1-\frac{v_{i}}{v_{\max}}\right)^{\delta^{(m)}} \left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x+1})}{R_{c}}\right)\right]
+\lambda_{i\rightarrow i+1}^{(m)} = a_{i}^{(m)}\left[\max\!\left(0,\, 1-\frac{v_{i}}{v_{\max}^{(m)}}\right)\right]^{\delta^{(m)}} \left[1-\exp\left(-\frac{\max(0,\rho_{\max}-\Omega_{x+1})}{R_{c}}\right)\right]
 \end{equation}
 
-At the domain boundary $x = X$, the downstream density is resolved by the boundary condition: $\Omega_{X+1} = \Omega_1$ for periodic (ring road) topology, or $\Omega_{X+1} = 0$ for open outflow.
+At the domain boundary $x = X$, the downstream occupancy is resolved by the boundary condition: $\Omega_{X+1} = \Omega_{1}$ for periodic (ring road) topology, or $\Omega_{X+1} = 0$ for open outflow.
 
-To rigorously trigger instant momentum thermalization when mass piles up locally, deceleration is governed by a \textbf{Singular Asymptotic Barrier} $\mathcal{B}(\Omega_{x})$. A regularizer $\epsilon \approx 10^{-8}$ completely eradicates division-by-zero anomalies:
+To rigorously trigger instant momentum thermalization when mass piles up locally, deceleration is governed by a \textbf{Singular Asymptotic Barrier} $\mathcal{B}(\Omega_x)$ evaluated on the PCE-weighted local occupancy with the class-specific exponent $\eta^{(m)}$. A regularizer $\epsilon \approx 10^{-8}$ completely eradicates division-by-zero anomalies:
 \begin{equation}
 \mathcal{B}(\Omega_{x}) = \left(\frac{\rho_{\max}}{\max(\epsilon,\rho_{\max}-\Omega_{x})}\right)^{\eta^{(m)}}
 \end{equation}
 
-The kinetic collision exposure evaluates relative velocity friction with slower vehicles within cell $x$, massively amplified as the local cell approaches jam density:
+The kinetic collision exposure evaluates relative velocity friction with slower vehicles within cell $x$, amplified as the local PCE-weighted occupancy approaches jam density:
 \begin{equation}
 \lambda_{i\rightarrow i-1}^{(m)} = \left[ \omega_{0}^{(m)} + \sum_{n}\sum_{k<i}\beta^{(m,n)}(v_{i}-v_{k}) \frac{w^{(n)} f_{k,x}^{(n)}}{\rho_{\max}} \right] \cdot \mathcal{B}(\Omega_{x})
 \end{equation}
